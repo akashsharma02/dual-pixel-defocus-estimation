@@ -13,16 +13,14 @@
 # limitations under the License.
 
 #!/bin/bash
-set -e
-set -x
+CONFIG=configs/demo
+SCENE=lego
+EXPERIMENT=jaxnerf-debug
+DATA_DIR=/home/akashsharma/Documents/datasets/nerf_synthetic/$SCENE
+RESULT_DIR=/home/akashsharma/tmp/$EXPERIMENT/$SCENE
 
-virtualenv -p python3 .
-source ./bin/activate
-
-pip install -r jaxnerf/requirements.txt
-python -m jaxnerf.train \
-  --data_dir=jaxnerf/example_data \
-  --train_dir=/tmp/jaxnerf_test \
-  --max_steps=5 \
-  --factor=2 \
-  --batch_size=512
+python -m train \
+--data_dir=$DATA_DIR \
+--train_dir=$TRAIN_DIR \
+--config=$CONFIG \
+--logtostderr
