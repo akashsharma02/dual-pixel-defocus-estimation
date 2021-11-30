@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright 2021 The Google Research Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,3 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+#!/bin/bash
+CONFIG=configs/demo
+SCENE=lego
+EXPERIMENT=jaxnerf-debug
+DATA_DIR=/home/akashsharma/Documents/datasets/nerf_synthetic/$SCENE
+TRAIN_DIR=/home/akashsharma/tmp/$EXPERIMENT/$SCENE
+
+python -m train \
+--data_dir=$DATA_DIR \
+--train_dir=$TRAIN_DIR \
+--config=$CONFIG \
+--logtostderr
