@@ -17,7 +17,7 @@ CONFIG=configs/demo
 SCENE=lego
 EXPERIMENT=jaxnerf-debug
 DATA_DIR=/home/akashsharma/Documents/datasets/nerf_synthetic/$SCENE
-RESULT_DIR=/home/akashsharma/tmp/$EXPERIMENT/$SCENE
+TRAIN_DIR=/home/akashsharma/tmp/$EXPERIMENT/$SCENE
 
 python -m train \
 --data_dir=$DATA_DIR \
