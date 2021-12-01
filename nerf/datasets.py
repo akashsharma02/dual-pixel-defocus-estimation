@@ -21,9 +21,11 @@ import numpy as np
 import jax
 import threading
 import queue
+from pathlib import Path
 from os import path
 import os
 import json
+import math
 INTERNAL = False  # pylint: disable=g-statement-before-imports
 if not INTERNAL:
     import cv2  # pylint: disable=g-import-not-at-top
@@ -73,7 +75,7 @@ class Dataset(threading.Thread):
             raise ValueError(
                 "the split argument should be either \"train\" or \"test\", set"
                 "to {} here.".format(split))
-        self.batch_size = args.batch_size // jax.host_count()
+        self.batch_size = args.batch_size // jax.process_count()
         self.batching = args.batching
         self.render_path = args.render_path
         self.start()
@@ -472,7 +474,111 @@ class LLFF(Dataset):
         return poses_reset
 
 
+class Pixel4DP(Dataset):
+    """Dataset for Pixel 4 DP data."""
+
+    def _train_init(self, args):
+        """Initialize training."""
+        self._load_renderings(args)
+        self._generate_rays()
+
+        if args.batching == "single_image":
+            self.images = self.images.reshape([-1, self.resolution, 2])
+            self.rays = utils.namedtuple_map(
+                lambda r: r.reshape([-1, self.resolution, r.shape[-1]]), self.rays)
+            print(f"Image shape: {self.images.shape}, Ray shape: {self.rays.origins.shape}")
+        else:
+            raise NotImplementedError(
+                f"{args.batching} batching strategy is not implemented.")
+
+    def _next_train(self):
+        """Sample next training batch."""
+
+        if self.batching == "single_image":
+            ray_indices = np.random.randint(0, self.rays[0][0].shape[0],
+                                            (self.batch_size,))
+            batch_pixels = self.images[0][ray_indices]
+            batch_rays = utils.namedtuple_map(lambda r: r[0][ray_indices],
+                                              self.rays)
+        else:
+            raise NotImplementedError(
+                f"{self.batching} batching strategy is not implemented.")
+        return {"pixels": batch_pixels, "rays": batch_rays}
+
+    def _load_renderings(self, args):
+        """Load images from disk."""
+        if args.render_path:
+            raise ValueError("render_path cannot be used for the blender dataset.")
+
+        datapath = Path(args.data_dir)
+        meta = None
+        with open(datapath / "intrinsics.json") as fp:
+            meta = json.load(fp)
+        image_fnames = [datapath / Path(args.scene + "_left.png"), datapath / Path(args.scene + "_right.png")]
+
+        def _load_and_preprocess_pixel_data(path_to_file):
+            # first deduct black level (1024 for 14-bit Google Pixel 4 DP data), then normalize to [0, 1]
+            with Image.open(path_to_file) as f:
+                image = np.array(f) - 1024
+                image[image < 0] = 0
+                image = np.stack([np.float32(image)] * 1, axis=2) / (2 ** 14 - 1)
+            return image
+
+        if args.factor > 0:
+            print(args.factor)
+            raise ValueError("Pixel4DP dataset only supports factor=0 {} "
+                             "set.".format(args.factor))
+        left_image, right_image = None, None
+        left_image = _load_and_preprocess_pixel_data(image_fnames[0])
+        right_image = _load_and_preprocess_pixel_data(image_fnames[1])
+
+        self.images = np.stack((left_image, right_image), axis=-1).squeeze()
+        self.images = self.images[None, :]
+        print(self.images.shape)
+
+        # TODO: Crop images if we use the calibrated blur kernels
+        self.h, self.w = self.images.shape[-3], self.images.shape[-2]
+        print(self.h, self.w)
+        self.resolution = self.h * self.w
+        self.camera_angle_x = meta["camera_angle_x"]
+        # Focal length in pixels (about 801 pixels)
+        self.focal = .5 * self.w / np.tan(.5 * self.camera_angle_x)
+        # Lens aperture size in m:
+        self.aperture_size = math.tan(.5 * self.camera_angle_x) * self.focal * meta["pixel_pitch"] * 2
+        print(f"Aperture size: {self.aperture_size}")
+        self.n_examples = self.images.shape[0]
+
+    def _generate_rays(self):
+        """Generating rays for all images."""
+        pixel_center = 0.5 if self.use_pixel_centers else 0.0
+        x, y = np.meshgrid(  # pylint: disable=unbalanced-tuple-unpacking
+            np.arange(self.w, dtype=np.float32) + pixel_center,  # X-Axis (columns)
+            np.arange(self.h, dtype=np.float32) + pixel_center,  # Y-Axis (rows)
+            indexing="xy")
+
+        camera_dirs = np.stack([(x - self.w * 0.5) / self.focal,
+                                -(y - self.h * 0.5) / self.focal, -np.ones_like(x)],
+                               axis=-1)
+
+        translation_vals = np.linspace(-self.aperture_size/2, self.aperture_size/2, 8)
+        translation_x, translation_y = np.meshgrid(translation_vals, translation_vals, indexing="xy")
+        translations = np.stack([translation_x, translation_y, np.zeros_like(translation_x)], axis=-1)
+
+        print(translations.shape)
+        # H x W x 8 x 8 x 3
+        directions = np.repeat(camera_dirs[..., None, :], len(translation_vals), axis=-2)
+        directions = np.repeat(directions[..., None, :], len(translation_vals), axis=-2)
+
+        origins = np.broadcast_to(translations[None, None, ...],
+                                  directions.shape)
+
+        viewdirs = directions / np.linalg.norm(directions, axis=-1, keepdims=True)
+        self.rays = utils.Rays(
+            origins=origins, directions=directions, viewdirs=viewdirs)
+
+
 dataset_dict = {
     "blender": Blender,
     "llff": LLFF,
+    "Pixel4DP": Pixel4DP,
 }

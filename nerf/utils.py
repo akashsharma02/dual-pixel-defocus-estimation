@@ -91,6 +91,7 @@ def define_flags():
         "this is the correct way to handle rays, it is not the way rays are "
         "handled in the original NeRF paper. Setting this TRUE yields ~ +1 PSNR "
         "compared to Vanilla NeRF.")
+    flags.DEFINE_string("scene", "001", "Scene ID for dual pixel data")
 
     # Model Flags
     flags.DEFINE_string("model", "nerf", "name of model to use.")
