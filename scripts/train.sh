@@ -13,11 +13,10 @@
 # limitations under the License.
 
 #!/bin/bash
-CONFIG=configs/demo
-SCENE=lego
-EXPERIMENT=v-1
-DATA_DIR=/home/tkhurana/Desktop/CMU/Courses/CompPhoto/project/data/nerf-data/nerf_synthetic/$SCENE
-TRAIN_DIR=/home/tkhurana/Desktop/CMU/Courses/CompPhoto/project/results/$EXPERIMENT/$SCENE
+CONFIG=configs/dual-pixel
+EXPERIMENT=dual-pixel-debug
+DATA_DIR=/home/akashsharma/Documents/datasets/dual-pixel-defocus/
+TRAIN_DIR=/home/akashsharma/tmp/$EXPERIMENT
 
 python -m train \
 --data_dir=$DATA_DIR \
