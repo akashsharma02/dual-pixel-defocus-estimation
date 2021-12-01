@@ -127,6 +127,8 @@ def main(unused_argv):
         raise ValueError("train_dir must be set. None set now.")
     if FLAGS.data_dir is None:
         raise ValueError("data_dir must be set. None set now.")
+    # TODO: Swap this dataset to load images directly
+    # There is no test data in defocus estimation case
     dataset = datasets.get_dataset("train", FLAGS)
     test_dataset = datasets.get_dataset("test", FLAGS)
 
