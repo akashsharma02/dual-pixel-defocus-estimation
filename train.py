@@ -160,8 +160,7 @@ def main(unused_argv):
         raise ValueError("train_dir must be set. None set now.")
     if FLAGS.data_dir is None:
         raise ValueError("data_dir must be set. None set now.")
-    # TODO: Swap this dataset to load images directly
-    # There is no test data in defocus estimation case
+
     dataset = datasets.get_dataset("train", FLAGS)
     test_dataset = datasets.get_dataset("test", FLAGS)
 
@@ -289,17 +288,20 @@ def main(unused_argv):
 
             # Log eval summaries on host 0.
             if jax.process_index() == 0:
-                psnr = utils.compute_psnr(
-                    ((pred_color - test_case["pixels"]) ** 2).mean()
-                )
-                ssim = ssim_fn(pred_color, test_case["pixels"])
+                pred_color_l, pred_color_r = utils.post_process(pred_color)
+                loss_r = ((pred_color_r - test_case["pixels"][..., 1]) ** 2).mean()
+                psnr_r = utils.compute_psnr(loss_r)
+                loss_l = ((pred_color_l - test_case["pixels"][..., 0]) ** 2).mean()
+                psnr_l = utils.compute_psnr(loss_l)
+                psnr = psnr_r + psnr_l
+                # ssim = ssim_fn(pred_color, test_case["pixels"])
                 eval_time = time.time() - t_eval_start
                 num_rays = jnp.prod(jnp.array(test_case["rays"].directions.shape[:-1]))
                 rays_per_sec = num_rays / eval_time
                 summary_writer.scalar("test_rays_per_sec", rays_per_sec, step)
                 print(f"Eval {step}: {eval_time:0.3f}s., {rays_per_sec:0.0f} rays/sec")
                 summary_writer.scalar("test_psnr", psnr, step)
-                summary_writer.scalar("test_ssim", ssim, step)
+                # summary_writer.scalar("test_ssim", ssim, step)
                 summary_writer.image("test_pred_color", pred_color, step)
                 summary_writer.image("test_pred_disp", pred_disp, step)
                 summary_writer.image("test_pred_acc", pred_acc, step)

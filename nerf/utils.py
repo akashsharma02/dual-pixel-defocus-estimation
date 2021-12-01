@@ -200,6 +200,7 @@ def define_flags():
     flags.DEFINE_integer(
         "print_every", 100, "the number of steps between reports to tensorboard."
     )
+    # TODO(Akash): Change it back
     flags.DEFINE_integer(
         "render_every",
         5000,
@@ -220,7 +221,7 @@ def define_flags():
     flags.DEFINE_bool("save_output", True, "save predicted images to disk if True.")
     flags.DEFINE_integer(
         "chunk",
-        8192,
+        32,
         "the size of chunks for evaluation inferences, set to the value that"
         "fits your GPU/TPU memory.",
     )
@@ -280,14 +281,14 @@ def render_image(render_fn, rays, rng, normalize_disp, chunk=8192):
     """
     height, width = rays[0].shape[:2]
     num_rays = height * width
-    rays = namedtuple_map(lambda r: r.reshape((num_rays, -1)), rays)
-
+    rays = namedtuple_map(lambda r: r.reshape((num_rays, r.shape[-3], r.shape[-2], r.shape[-1])), rays)
+    print(f"Ray shape after flattening resolution, {rays.origins.shape}")
     unused_rng, key_0, key_1 = jax.random.split(rng, 3)
     host_id = jax.process_index()
     results = []
     for i in range(0, num_rays, chunk):
         # pylint: disable=cell-var-from-loop
-        chunk_rays = namedtuple_map(lambda r: r[i : i + chunk], rays)
+        chunk_rays = namedtuple_map(lambda r: r[i: i + chunk], rays)
         chunk_size = chunk_rays[0].shape[0]
         rays_remaining = chunk_size % jax.device_count()
         if rays_remaining != 0:
@@ -299,7 +300,7 @@ def render_image(render_fn, rays, rng, normalize_disp, chunk=8192):
             padding = 0
         # After padding the number of chunk_rays is always divisible by
         # host_count.
-        rays_per_host = chunk_rays[0].shape[0] // jax.host_count()
+        rays_per_host = chunk_rays[0].shape[0] // jax.process_count()
         start, stop = host_id * rays_per_host, (host_id + 1) * rays_per_host
         chunk_rays = namedtuple_map(lambda r: shard(r[start:stop]), chunk_rays)
         chunk_results = render_fn(key_0, key_1, chunk_rays)[-1]
@@ -339,7 +340,7 @@ def post_process(rgb):
     """
     batch, lightfield_height, lightfield_width = rgb.shape
     rgb_l = jnp.mean(rgb[:, :, : int(lightfield_width / 2)], axis=(1, 2))
-    rgb_r = jnp.mean(rgb[:, :, int(lightfield_width / 2) :], axis=(1, 2))
+    rgb_r = jnp.mean(rgb[:, :, int(lightfield_width / 2):], axis=(1, 2))
     return rgb_l, rgb_r
 
 

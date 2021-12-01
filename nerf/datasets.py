@@ -540,9 +540,6 @@ class Pixel4DP(Dataset):
                 self.rays,
             )
             self.rays = utils.namedtuple_map(lambda r: np.expand_dims(r, 0), self.rays,)
-            # print(
-            #     f"Image shape: {self.images.shape}, Ray shape: {self.rays.origins.shape}"
-            # )
         else:
             raise NotImplementedError(
                 f"{args.batching} batching strategy is not implemented."
@@ -558,16 +555,21 @@ class Pixel4DP(Dataset):
             )
             batch_pixels = self.images[0][ray_indices]
             batch_rays = utils.namedtuple_map(lambda r: r[0][ray_indices], self.rays)
-            # print(
-            #     "batch pixels and rays shape",
-            #     batch_pixels.shape,
-            #     batch_rays.origins.shape,
-            # )
         else:
             raise NotImplementedError(
                 f"{self.batching} batching strategy is not implemented."
             )
         return {"pixels": batch_pixels, "rays": batch_rays}
+
+    def _next_test(self):
+        """Sample next test example."""
+        idx = self.it
+        self.it = (self.it + 1) % self.n_examples
+
+        return {
+            "pixels": self.images[idx],
+            "rays": self.rays,
+        }
 
     def _load_renderings(self, args):
         """Load images from disk."""
@@ -591,16 +593,38 @@ class Pixel4DP(Dataset):
                 image = np.stack([np.float32(image)] * 1, axis=2) / (2 ** 14 - 1)
             return image
 
+        # Keep only central field of view (1008 * 1344)
+        def _crop_image_central_fov(images, patch_size, num_rows, num_cols):
+            """ Crop images
+
+            Args:
+              images: [..., H, W, C] #images, height, width, #channels.
+
+            Returns:
+              [..., #rows * P, #cols * P, C] cropped images
+            """
+
+            crop_y = patch_size * num_rows
+            crop_x = patch_size * num_cols
+            offset_y = (images.shape[-3] - crop_y) // 2
+            offset_x = (images.shape[-2] - crop_x) // 2
+
+            return images[..., offset_y:offset_y + crop_y, offset_x:offset_x + crop_x, :]
+
         if args.factor > 0:
             print(args.factor)
             raise ValueError(
                 "Pixel4DP dataset only supports factor=0 {} " "set.".format(args.factor)
             )
+
         left_image, right_image = None, None
         left_image = _load_and_preprocess_pixel_data(image_fnames[0])
         right_image = _load_and_preprocess_pixel_data(image_fnames[1])
 
+        patch_params = dict(patch_size=168, num_rows=6, num_cols=8)
+
         self.images = np.stack((left_image, right_image), axis=-1).squeeze()
+        self.images = _crop_image_central_fov(self.images, **patch_params)
         self.images = self.images[None, :]
         # print(self.images.shape)
 
