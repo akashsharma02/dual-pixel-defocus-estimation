@@ -114,7 +114,7 @@ def define_flags():
     flags.DEFINE_string("scene", "001", "Scene ID for dual pixel data")
 
     # Model Flags
-    flags.DEFINE_string("model", "nerf", "name of model to use.")
+    flags.DEFINE_string("model", "lightfieutilsldnerf", "name of model to use.")
     flags.DEFINE_float("near", 2.0, "near clip of volumetric rendering.")
     flags.DEFINE_float("far", 6.0, "far clip of volumentric rendering.")
     flags.DEFINE_integer("net_depth", 8, "depth of the first part of MLP.")
@@ -145,6 +145,8 @@ def define_flags():
     flags.DEFINE_integer(
         "num_fine_samples", 128, "the number of samples on each ray for the fine model."
     )
+    flags.DEFINE_integer("lightfield_width", 8, "width of the lightfield.")
+    flags.DEFINE_integer("lightfield_height", 8, "height of the lightfield.")
     flags.DEFINE_bool("use_viewdirs", True, "use view directions as a condition.")
     flags.DEFINE_float(
         "noise_std",
@@ -328,15 +330,16 @@ def compute_psnr(mse):
 
 def post_process(rgb):
     """Converts the output rgb values from Nerf to left and right dual pixels.
-        Args:
-          rgb: shape (batch x 8 x 8 x 3) if lightfield height and width are 8 and 8.
 
-        Returns:
-          l, r: left and right dual pixels of shape (batch x 3)
+    Args:
+      rgb: shape (batch x 8 x 8 x 3) if lightfield height and width are 8 and 8.
+
+    Returns:
+      l, r: left and right dual pixels of shape (batch x 3)
     """
-    batch, lightfield_height, lightfield_width, c = rgb.shape
-    rgb_l = jnp.mean(rgb[:, :, : int(lightfield_width / 2), :], axis=(1, 2))
-    rgb_r = jnp.mean(rgb[:, :, int(lightfield_width / 2) :, :], axis=(1, 2))
+    batch, lightfield_height, lightfield_width = rgb.shape
+    rgb_l = jnp.mean(rgb[:, :, : int(lightfield_width / 2)], axis=(1, 2))
+    rgb_r = jnp.mean(rgb[:, :, int(lightfield_width / 2) :], axis=(1, 2))
     return rgb_l, rgb_r
 
 

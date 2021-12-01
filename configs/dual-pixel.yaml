@@ -1,10 +1,14 @@
 dataset: Pixel4DP
 scene: "001"
 batching: single_image
+model: "lightfieldnerf"
 factor: 0
 num_coarse_samples: 64
 num_fine_samples: 128
 use_viewdirs: true
 white_bkgd: true
-batch_size: 4096
+batch_size: 4
 randomized: true
+lightfield_width: 8
+lightfield_height: 8
+num_rgb_channels: 1

@@ -28,6 +28,7 @@ import jax.numpy as jnp
 
 class MLP(nn.Module):
     """A simple MLP."""
+
     net_depth: int = 8  # The depth of the first part of MLP.
     net_width: int = 256  # The width of the first part of MLP.
     net_depth_condition: int = 1  # The depth of the second part of MLP.
@@ -59,7 +60,8 @@ class MLP(nn.Module):
         num_samples = x.shape[1]
         x = x.reshape([-1, feature_dim])
         dense_layer = functools.partial(
-            nn.Dense, kernel_init=jax.nn.initializers.glorot_uniform())
+            nn.Dense, kernel_init=jax.nn.initializers.glorot_uniform()
+        )
         inputs = x
         for i in range(self.net_depth):
             x = dense_layer(self.net_width)(x)
@@ -67,7 +69,8 @@ class MLP(nn.Module):
             if i % self.skip_layer == 0 and i > 0:
                 x = jnp.concatenate([x, inputs], axis=-1)
         raw_sigma = dense_layer(self.num_sigma_channels)(x).reshape(
-            [-1, num_samples, self.num_sigma_channels])
+            [-1, num_samples, self.num_sigma_channels]
+        )
 
         if condition is not None:
             # Output of the first part of MLP.
@@ -85,16 +88,21 @@ class MLP(nn.Module):
                 x = dense_layer(self.net_width_condition)(x)
                 x = self.net_activation(x)
         raw_rgb = dense_layer(self.num_rgb_channels)(x).reshape(
-            [-1, num_samples, self.num_rgb_channels])
+            [-1, num_samples, self.num_rgb_channels]
+        )
         return raw_rgb, raw_sigma
 
 
 def cast_rays(z_vals, origins, directions):
-    return origins[Ellipsis, None, :] + z_vals[Ellipsis, None] * directions[Ellipsis, None, :]
+    return (
+        origins[Ellipsis, None, :]
+        + z_vals[Ellipsis, None] * directions[Ellipsis, None, :]
+    )
 
 
-def sample_along_rays(key, origins, directions, num_samples, near, far,
-                      randomized, lindisp):
+def sample_along_rays(
+    key, origins, directions, num_samples, near, far, randomized, lindisp
+):
     """Stratified sampling along the rays.
 
     Args:
@@ -113,14 +121,14 @@ def sample_along_rays(key, origins, directions, num_samples, near, far,
     """
     batch_size = origins.shape[0]
 
-    t_vals = jnp.linspace(0., 1., num_samples)
+    t_vals = jnp.linspace(0.0, 1.0, num_samples)
     if lindisp:
-        z_vals = 1. / (1. / near * (1. - t_vals) + 1. / far * t_vals)
+        z_vals = 1.0 / (1.0 / near * (1.0 - t_vals) + 1.0 / far * t_vals)
     else:
-        z_vals = near * (1. - t_vals) + far * t_vals
+        z_vals = near * (1.0 - t_vals) + far * t_vals
 
     if randomized:
-        mids = .5 * (z_vals[Ellipsis, 1:] + z_vals[Ellipsis, :-1])
+        mids = 0.5 * (z_vals[Ellipsis, 1:] + z_vals[Ellipsis, :-1])
         upper = jnp.concatenate([mids, z_vals[Ellipsis, -1:]], -1)
         lower = jnp.concatenate([z_vals[Ellipsis, :1], mids], -1)
         t_rand = random.uniform(key, [batch_size, num_samples])
@@ -150,15 +158,16 @@ def posenc(x, min_deg, max_deg, legacy_posenc_order=False):
     """
     if min_deg == max_deg:
         return x
-    scales = jnp.array([2**i for i in range(min_deg, max_deg)])
+    scales = jnp.array([2 ** i for i in range(min_deg, max_deg)])
     if legacy_posenc_order:
         xb = x[Ellipsis, None, :] * scales[:, None]
         four_feat = jnp.reshape(
-            jnp.sin(jnp.stack([xb, xb + 0.5 * jnp.pi], -2)),
-            list(x.shape[:-1]) + [-1])
+            jnp.sin(jnp.stack([xb, xb + 0.5 * jnp.pi], -2)), list(x.shape[:-1]) + [-1]
+        )
     else:
-        xb = jnp.reshape((x[Ellipsis, None, :] * scales[:, None]),
-                         list(x.shape[:-1]) + [-1])
+        xb = jnp.reshape(
+            (x[Ellipsis, None, :] * scales[:, None]), list(x.shape[:-1]) + [-1]
+        )
         four_feat = jnp.sin(jnp.concatenate([xb, xb + 0.5 * jnp.pi], axis=-1))
     return jnp.concatenate([x] + [four_feat], axis=-1)
 
@@ -179,19 +188,25 @@ def volumetric_rendering(rgb, sigma, z_vals, dirs, white_bkgd):
       acc: jnp.ndarray(float32), [batch_size].
       weights: jnp.ndarray(float32), [batch_size, num_samples]
     """
+    print("shape of rgb right outside the model", rgb.shape)
     eps = 1e-10
-    dists = jnp.concatenate([
-        z_vals[Ellipsis, 1:] - z_vals[Ellipsis, :-1],
-        jnp.broadcast_to([1e10], z_vals[Ellipsis, :1].shape)
-    ], -1)
+    dists = jnp.concatenate(
+        [
+            z_vals[Ellipsis, 1:] - z_vals[Ellipsis, :-1],
+            jnp.broadcast_to([1e10], z_vals[Ellipsis, :1].shape),
+        ],
+        -1,
+    )
     dists = dists * jnp.linalg.norm(dirs[Ellipsis, None, :], axis=-1)
     # Note that we're quietly turning sigma from [..., 0] to [...].
     alpha = 1.0 - jnp.exp(-sigma[Ellipsis, 0] * dists)
-    accum_prod = jnp.concatenate([
-        jnp.ones_like(alpha[Ellipsis, :1], alpha.dtype),
-        jnp.cumprod(1.0 - alpha[Ellipsis, :-1] + eps, axis=-1)
-    ],
-        axis=-1)
+    accum_prod = jnp.concatenate(
+        [
+            jnp.ones_like(alpha[Ellipsis, :1], alpha.dtype),
+            jnp.cumprod(1.0 - alpha[Ellipsis, :-1] + eps, axis=-1),
+        ],
+        axis=-1,
+    )
     weights = alpha * accum_prod
 
     comp_rgb = (weights[Ellipsis, None] * rgb).sum(axis=-2)
@@ -203,7 +218,7 @@ def volumetric_rendering(rgb, sigma, z_vals, dirs, white_bkgd):
     disp = acc / depth
     disp = jnp.where((disp > 0) & (disp < inv_eps) & (acc > eps), disp, inv_eps)
     if white_bkgd:
-        comp_rgb = comp_rgb + (1. - acc[Ellipsis, None])
+        comp_rgb = comp_rgb + (1.0 - acc[Ellipsis, None])
     return comp_rgb, disp, acc, weights
 
 
@@ -232,11 +247,14 @@ def piecewise_constant_pdf(key, bins, weights, num_samples, randomized):
     # starts with exactly 0 and ends with exactly 1.
     pdf = weights / weight_sum
     cdf = jnp.minimum(1, jnp.cumsum(pdf[Ellipsis, :-1], axis=-1))
-    cdf = jnp.concatenate([
-        jnp.zeros(list(cdf.shape[:-1]) + [1]), cdf,
-        jnp.ones(list(cdf.shape[:-1]) + [1])
-    ],
-        axis=-1)
+    cdf = jnp.concatenate(
+        [
+            jnp.zeros(list(cdf.shape[:-1]) + [1]),
+            cdf,
+            jnp.ones(list(cdf.shape[:-1]) + [1]),
+        ],
+        axis=-1,
+    )
 
     # Draw uniform samples.
     if randomized:
@@ -244,7 +262,7 @@ def piecewise_constant_pdf(key, bins, weights, num_samples, randomized):
         u = random.uniform(key, list(cdf.shape[:-1]) + [num_samples])
     else:
         # Match the behavior of random.uniform() by spanning [0, 1-eps].
-        u = jnp.linspace(0., 1. - jnp.finfo('float32').eps, num_samples)
+        u = jnp.linspace(0.0, 1.0 - jnp.finfo("float32").eps, num_samples)
         u = jnp.broadcast_to(u, list(cdf.shape[:-1]) + [num_samples])
 
     # Identify the location in `cdf` that corresponds to a random sample.
@@ -268,8 +286,9 @@ def piecewise_constant_pdf(key, bins, weights, num_samples, randomized):
     return lax.stop_gradient(samples)
 
 
-def sample_pdf(key, bins, weights, origins, directions, z_vals, num_samples,
-               randomized):
+def sample_pdf(
+    key, bins, weights, origins, directions, z_vals, num_samples, randomized
+):
     """Hierarchical sampling.
 
     Args:
@@ -288,8 +307,7 @@ def sample_pdf(key, bins, weights, origins, directions, z_vals, num_samples,
       points: jnp.ndarray(float32),
         [batch_size, num_coarse_samples + num_fine_samples, 3].
     """
-    z_samples = piecewise_constant_pdf(key, bins, weights, num_samples,
-                                       randomized)
+    z_samples = piecewise_constant_pdf(key, bins, weights, num_samples, randomized)
     # Compute united z_vals and sample points
     z_vals = jnp.sort(jnp.concatenate([z_vals, z_samples], axis=-1), axis=-1)
     coords = cast_rays(z_vals, origins, directions)

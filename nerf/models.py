@@ -28,6 +28,7 @@ def get_model(key, example_batch, args):
     """A helper function that wraps around a 'model zoo'."""
     model_dict = {
         "nerf": construct_nerf,
+        "lightfieldnerf": construct_lightfieldnerf,
     }
     return model_dict[args.model](key, example_batch, args)
 
@@ -76,7 +77,9 @@ class NerfLightfieldModel(nn.Module):
         # Stratified sampling along rays
         key, rng_0 = random.split(rng_0)
         # convert whatever the input set of rays per pixel is, to a N x 3 ray vector
+        print("rays origins shape before going into the model", rays.origins.shape)
         rays = utils.namedtuple_map(lambda r: r.reshape((-1, 3)), rays)
+        print("rays origins shape before going into the model 1", rays.origins.shape)
         z_vals, samples = model_utils.sample_along_rays(
             key,
             rays.origins,
@@ -112,6 +115,7 @@ class NerfLightfieldModel(nn.Module):
         else:
             raw_rgb, raw_sigma = coarse_mlp(samples_enc)
         # Add noises to regularize the density predictions if needed
+        print("raw rgb shape", raw_rgb.shape)
         key, rng_0 = random.split(rng_0)
         raw_sigma = model_utils.add_gaussian_noise(
             key, raw_sigma, self.noise_std, randomized,
@@ -177,6 +181,7 @@ class NerfLightfieldModel(nn.Module):
             comp_rgb, disp, acc, unused_weights = model_utils.volumetric_rendering(
                 rgb, sigma, z_vals, rays.directions, white_bkgd=self.white_bkgd,
             )
+            print("right out of volumetric rendering", comp_rgb.shape)
             comp_rgb = comp_rgb.reshape(
                 (-1, self.lightfield_height, self.lightfield_width)
             )
@@ -246,6 +251,83 @@ def construct_nerf(key, example_batch, args):
         rgb_activation=rgb_activation,
         sigma_activation=sigma_activation,
         legacy_posenc_order=args.legacy_posenc_order,
+    )
+    rays = example_batch["rays"]
+    key1, key2, key3 = random.split(key, num=3)
+
+    init_variables = model.init(
+        key1,
+        rng_0=key2,
+        rng_1=key3,
+        rays=utils.namedtuple_map(lambda x: x[0], rays),
+        randomized=args.randomized,
+    )
+
+    return model, init_variables
+
+
+def construct_lightfieldnerf(key, example_batch, args):
+    """Construct a LightField Neural Radiance Field.
+
+    Args:
+      key: jnp.ndarray. Random number generator.
+      example_batch: dict, an example of a batch of data.
+      args: FLAGS class. Hyperparameters of nerf.
+
+    Returns:
+      model: nn.Model. Nerf model with parameters.
+      state: flax.Module.state. Nerf model state for stateful parameters.
+    """
+    net_activation = getattr(nn, str(args.net_activation))
+    rgb_activation = getattr(nn, str(args.rgb_activation))
+    sigma_activation = getattr(nn, str(args.sigma_activation))
+
+    # Assert that rgb_activation always produces outputs in [0, 1], and
+    # sigma_activation always produce non-negative outputs.
+    x = jnp.exp(jnp.linspace(-90, 90, 1024))
+    x = jnp.concatenate([-x[::-1], x], 0)
+
+    rgb = rgb_activation(x)
+    if jnp.any(rgb < 0) or jnp.any(rgb > 1):
+        raise NotImplementedError(
+            "Choice of rgb_activation `{}` produces colors outside of [0, 1]".format(
+                args.rgb_activation
+            )
+        )
+
+    sigma = sigma_activation(x)
+    if jnp.any(sigma < 0):
+        raise NotImplementedError(
+            "Choice of sigma_activation `{}` produces negative densities".format(
+                args.sigma_activation
+            )
+        )
+
+    model = NerfLightfieldModel(
+        min_deg_point=args.min_deg_point,
+        max_deg_point=args.max_deg_point,
+        deg_view=args.deg_view,
+        num_coarse_samples=args.num_coarse_samples,
+        num_fine_samples=args.num_fine_samples,
+        use_viewdirs=args.use_viewdirs,
+        near=args.near,
+        far=args.far,
+        noise_std=args.noise_std,
+        white_bkgd=args.white_bkgd,
+        net_depth=args.net_depth,
+        net_width=args.net_width,
+        net_depth_condition=args.net_depth_condition,
+        net_width_condition=args.net_width_condition,
+        skip_layer=args.skip_layer,
+        num_rgb_channels=args.num_rgb_channels,
+        num_sigma_channels=args.num_sigma_channels,
+        lindisp=args.lindisp,
+        net_activation=net_activation,
+        rgb_activation=rgb_activation,
+        sigma_activation=sigma_activation,
+        legacy_posenc_order=args.legacy_posenc_order,
+        lightfield_width=args.lightfield_width,
+        lightfield_height=args.lightfield_height,
     )
     rays = example_batch["rays"]
     key1, key2, key3 = random.split(key, num=3)

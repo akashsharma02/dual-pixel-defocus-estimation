@@ -77,18 +77,18 @@ def train_step(model, rng, state, batch, lr):
         print("shape of rgb before", rgb.shape)
         rgb_l, rgb_r = utils.post_process(rgb)
         print("shape of rgb", rgb_l.shape)
-        loss_r = ((rgb_r - batch["pixels"][Ellipsis, 1, :3]) ** 2).mean()
+        loss_r = ((rgb_r - batch["pixels"][Ellipsis, 1]) ** 2).mean()
         psnr_r = utils.compute_psnr(loss_r)
-        loss_l = ((rgb_l - batch["pixels"][Ellipsis, 0, :3]) ** 2).mean()
+        loss_l = ((rgb_l - batch["pixels"][Ellipsis, 0]) ** 2).mean()
         psnr_l = utils.compute_psnr(loss_l)
         if len(ret) > 1:
             # If there are both coarse and fine predictions, we compute the loss for
             # the coarse prediction (ret[0]) as well.
             rgb_c, unused_disp_c, unused_acc_c = ret[0]
             rgb_cl, rgb_cr = utils.post_process(rgb_c)
-            loss_cl = ((rgb_cl - batch["pixels"][Ellipsis, 0, :3]) ** 2).mean()
+            loss_cl = ((rgb_cl - batch["pixels"][Ellipsis, 0]) ** 2).mean()
             psnr_cl = utils.compute_psnr(loss_cl)
-            loss_cr = ((rgb_cr - batch["pixels"][Ellipsis, 1, :3]) ** 2).mean()
+            loss_cr = ((rgb_cr - batch["pixels"][Ellipsis, 1]) ** 2).mean()
             psnr_cr = utils.compute_psnr(loss_cr)
         else:
             loss_cr = loss_cl = 0.0
@@ -237,13 +237,13 @@ def main(unused_argv):
         # only use host 0 to record results.
         if jax.process_index() == 0:
             if step % FLAGS.print_every == 0:
-                summary_writer.scalar("train_loss", stats.loss[0], step)
-                summary_writer.scalar("train_psnr", stats.psnr[0], step)
-                summary_writer.scalar("train_loss_coarse", stats.loss_c[0], step)
-                summary_writer.scalar("train_psnr_coarse", stats.psnr_c[0], step)
+                summary_writer.scalar("train_loss", stats.loss_l[0], step)
+                summary_writer.scalar("train_psnr", stats.psnr_l[0], step)
+                summary_writer.scalar("train_loss_coarse", stats.loss_cl[0], step)
+                summary_writer.scalar("train_psnr_coarse", stats.psnr_cl[0], step)
                 summary_writer.scalar("weight_l2", stats.weight_l2[0], step)
-                avg_loss = np.mean(np.concatenate([s.loss for s in stats_trace]))
-                avg_psnr = np.mean(np.concatenate([s.psnr for s in stats_trace]))
+                avg_loss = np.mean(np.concatenate([s.loss_l for s in stats_trace]))
+                avg_psnr = np.mean(np.concatenate([s.psnr_l for s in stats_trace]))
                 stats_trace = []
                 summary_writer.scalar("train_avg_loss", avg_loss, step)
                 summary_writer.scalar("train_avg_psnr", avg_psnr, step)
@@ -257,7 +257,7 @@ def main(unused_argv):
                 print(
                     ("{:" + "{:d}".format(precision) + "d}").format(step)
                     + f"/{FLAGS.max_steps:d}: "
-                    + f"i_loss={stats.loss[0]:0.4f}, "
+                    + f"i_loss={stats.loss_l[0]:0.4f}, "
                     + f"avg_loss={avg_loss:0.4f}, "
                     + f"weight_l2={stats.weight_l2[0]:0.2e}, "
                     + f"lr={lr:0.2e}, "
