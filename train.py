@@ -59,52 +59,85 @@ def train_step(model, rng, state, batch, lr):
 
     def loss_fn(variables):
         rays = batch["rays"]
+        print(
+            "shape of rays",
+            rays.origins.shape,
+            rays.directions.shape,
+            rays.viewdirs.shape,
+        )
+        print("shape of batch pixels", batch["pixels"])
         ret = model.apply(variables, key_0, key_1, rays, FLAGS.randomized)
         if len(ret) not in (1, 2):
             raise ValueError(
                 "ret should contain either 1 set of output (coarse only), or 2 sets"
-                "of output (coarse as ret[0] and fine as ret[1]).")
+                "of output (coarse as ret[0] and fine as ret[1])."
+            )
         # The main prediction is always at the end of the ret list.
         rgb, unused_disp, unused_acc = ret[-1]
-        loss = ((rgb - batch["pixels"][Ellipsis, :3])**2).mean()
-        psnr = utils.compute_psnr(loss)
+        print("shape of rgb before", rgb.shape)
+        rgb_l, rgb_r = utils.post_process(rgb)
+        print("shape of rgb", rgb_l.shape)
+        loss_r = ((rgb_r - batch["pixels"][Ellipsis, 1]) ** 2).mean()
+        psnr_r = utils.compute_psnr(loss_r)
+        loss_l = ((rgb_l - batch["pixels"][Ellipsis, 0]) ** 2).mean()
+        psnr_l = utils.compute_psnr(loss_l)
         if len(ret) > 1:
             # If there are both coarse and fine predictions, we compute the loss for
             # the coarse prediction (ret[0]) as well.
             rgb_c, unused_disp_c, unused_acc_c = ret[0]
-            loss_c = ((rgb_c - batch["pixels"][Ellipsis, :3])**2).mean()
-            psnr_c = utils.compute_psnr(loss_c)
+            rgb_cl, rgb_cr = utils.post_process(rgb_c)
+            loss_cl = ((rgb_cl - batch["pixels"][Ellipsis, 0]) ** 2).mean()
+            psnr_cl = utils.compute_psnr(loss_cl)
+            loss_cr = ((rgb_cr - batch["pixels"][Ellipsis, 1]) ** 2).mean()
+            psnr_cr = utils.compute_psnr(loss_cr)
         else:
-            loss_c = 0.
-            psnr_c = 0.
+            loss_cr = loss_cl = 0.0
+            psnr_cr = psnr_cl = 0.0
 
         def tree_sum_fn(fn):
             return jax.tree_util.tree_reduce(
-                lambda x, y: x + fn(y), variables, initializer=0)
+                lambda x, y: x + fn(y), variables, initializer=0
+            )
 
-        weight_l2 = (
-            tree_sum_fn(lambda z: jnp.sum(z**2)) /
-            tree_sum_fn(lambda z: jnp.prod(jnp.array(z.shape))))
+        weight_l2 = tree_sum_fn(lambda z: jnp.sum(z ** 2)) / tree_sum_fn(
+            lambda z: jnp.prod(jnp.array(z.shape))
+        )
 
         stats = utils.Stats(
-            loss=loss, psnr=psnr, loss_c=loss_c, psnr_c=psnr_c, weight_l2=weight_l2)
-        return loss + loss_c + FLAGS.weight_decay_mult * weight_l2, stats
+            loss_r=loss_r,
+            loss_l=loss_l,
+            psnr_l=psnr_l,
+            psnr_r=psnr_r,
+            loss_cl=loss_cl,
+            loss_cr=loss_cr,
+            psnr_cl=psnr_cl,
+            psnr_cr=psnr_cr,
+            weight_l2=weight_l2,
+        )
+        return (
+            loss_l + loss_r + loss_cl + loss_cr + FLAGS.weight_decay_mult * weight_l2,
+            stats,
+        )
 
-    (_, stats), grad = (
-        jax.value_and_grad(loss_fn, has_aux=True)(state.optimizer.target))
+    (_, stats), grad = jax.value_and_grad(loss_fn, has_aux=True)(state.optimizer.target)
     grad = jax.lax.pmean(grad, axis_name="batch")
     stats = jax.lax.pmean(stats, axis_name="batch")
 
     # Clip the gradient by value.
     if FLAGS.grad_max_val > 0:
-        def clip_fn(z): return jnp.clip(z, -FLAGS.grad_max_val, FLAGS.grad_max_val)
+
+        def clip_fn(z):
+            return jnp.clip(z, -FLAGS.grad_max_val, FLAGS.grad_max_val)
+
         grad = jax.tree_util.tree_map(clip_fn, grad)
 
     # Clip the (possibly value-clipped) gradient by norm.
     if FLAGS.grad_max_norm > 0:
         grad_norm = jnp.sqrt(
             jax.tree_util.tree_reduce(
-                lambda x, y: x + jnp.sum(y**2), grad, initializer=0))
+                lambda x, y: x + jnp.sum(y ** 2), grad, initializer=0
+            )
+        )
         mult = jnp.minimum(1, FLAGS.grad_max_norm / (1e-7 + grad_norm))
         grad = jax.tree_util.tree_map(lambda z: mult * z, grad)
 
@@ -144,18 +177,21 @@ def main(unused_argv):
         lr_final=FLAGS.lr_final,
         max_steps=FLAGS.max_steps,
         lr_delay_steps=FLAGS.lr_delay_steps,
-        lr_delay_mult=FLAGS.lr_delay_mult)
+        lr_delay_mult=FLAGS.lr_delay_mult,
+    )
 
     train_pstep = jax.pmap(
         functools.partial(train_step, model),
         axis_name="batch",
         in_axes=(0, 0, 0, None),
-        donate_argnums=(2,))
+        donate_argnums=(2,),
+    )
 
     def render_fn(variables, key_0, key_1, rays):
         return jax.lax.all_gather(
             model.apply(variables, key_0, key_1, rays, FLAGS.randomized),
-            axis_name="batch")
+            axis_name="batch",
+        )
 
     render_pfn = jax.pmap(
         render_fn,
@@ -165,8 +201,7 @@ def main(unused_argv):
     )
 
     # Compiling to the CPU because it's faster and more accurate.
-    ssim_fn = jax.jit(
-        functools.partial(utils.compute_ssim, max_val=1.), backend="cpu")
+    ssim_fn = jax.jit(functools.partial(utils.compute_ssim, max_val=1.0), backend="cpu")
 
     if not utils.isdir(FLAGS.train_dir):
         utils.makedirs(FLAGS.train_dir)
@@ -202,13 +237,13 @@ def main(unused_argv):
         # only use host 0 to record results.
         if jax.process_index() == 0:
             if step % FLAGS.print_every == 0:
-                summary_writer.scalar("train_loss", stats.loss[0], step)
-                summary_writer.scalar("train_psnr", stats.psnr[0], step)
-                summary_writer.scalar("train_loss_coarse", stats.loss_c[0], step)
-                summary_writer.scalar("train_psnr_coarse", stats.psnr_c[0], step)
+                summary_writer.scalar("train_loss", stats.loss_l[0], step)
+                summary_writer.scalar("train_psnr", stats.psnr_l[0], step)
+                summary_writer.scalar("train_loss_coarse", stats.loss_cl[0], step)
+                summary_writer.scalar("train_psnr_coarse", stats.psnr_cl[0], step)
                 summary_writer.scalar("weight_l2", stats.weight_l2[0], step)
-                avg_loss = np.mean(np.concatenate([s.loss for s in stats_trace]))
-                avg_psnr = np.mean(np.concatenate([s.psnr for s in stats_trace]))
+                avg_loss = np.mean(np.concatenate([s.loss_l for s in stats_trace]))
+                avg_psnr = np.mean(np.concatenate([s.psnr_l for s in stats_trace]))
                 stats_trace = []
                 summary_writer.scalar("train_avg_loss", avg_loss, step)
                 summary_writer.scalar("train_avg_psnr", avg_psnr, step)
@@ -219,15 +254,20 @@ def main(unused_argv):
                 summary_writer.scalar("train_steps_per_sec", steps_per_sec, step)
                 summary_writer.scalar("train_rays_per_sec", rays_per_sec, step)
                 precision = int(np.ceil(np.log10(FLAGS.max_steps))) + 1
-                print(("{:" + "{:d}".format(precision) + "d}").format(step) +
-                      f"/{FLAGS.max_steps:d}: " + f"i_loss={stats.loss[0]:0.4f}, " +
-                      f"avg_loss={avg_loss:0.4f}, " +
-                      f"weight_l2={stats.weight_l2[0]:0.2e}, " + f"lr={lr:0.2e}, " +
-                      f"{rays_per_sec:0.0f} rays/sec")
+                print(
+                    ("{:" + "{:d}".format(precision) + "d}").format(step)
+                    + f"/{FLAGS.max_steps:d}: "
+                    + f"i_loss={stats.loss_l[0]:0.4f}, "
+                    + f"avg_loss={avg_loss:0.4f}, "
+                    + f"weight_l2={stats.weight_l2[0]:0.2e}, "
+                    + f"lr={lr:0.2e}, "
+                    + f"{rays_per_sec:0.0f} rays/sec"
+                )
             if step % FLAGS.save_every == 0:
                 state_to_save = jax.device_get(jax.tree_map(lambda x: x[0], state))
                 checkpoints.save_checkpoint(
-                    FLAGS.train_dir, state_to_save, int(step), keep=100)
+                    FLAGS.train_dir, state_to_save, int(step), keep=100
+                )
 
         # Test-set evaluation.
         if FLAGS.render_every > 0 and step % FLAGS.render_every == 0:
@@ -235,20 +275,23 @@ def main(unused_argv):
             # here on purpose so that the visualization matches what happened in
             # training.
             t_eval_start = time.time()
-            eval_variables = jax.device_get(jax.tree_map(lambda x: x[0],
-                                                         state)).optimizer.target
+            eval_variables = jax.device_get(
+                jax.tree_map(lambda x: x[0], state)
+            ).optimizer.target
             test_case = next(test_dataset)
             pred_color, pred_disp, pred_acc = utils.render_image(
                 functools.partial(render_pfn, eval_variables),
                 test_case["rays"],
                 keys[0],
                 FLAGS.dataset == "llff",
-                chunk=FLAGS.chunk)
+                chunk=FLAGS.chunk,
+            )
 
             # Log eval summaries on host 0.
             if jax.process_index() == 0:
                 psnr = utils.compute_psnr(
-                    ((pred_color - test_case["pixels"])**2).mean())
+                    ((pred_color - test_case["pixels"]) ** 2).mean()
+                )
                 ssim = ssim_fn(pred_color, test_case["pixels"])
                 eval_time = time.time() - t_eval_start
                 num_rays = jnp.prod(jnp.array(test_case["rays"].directions.shape[:-1]))
@@ -265,7 +308,8 @@ def main(unused_argv):
     if FLAGS.max_steps % FLAGS.save_every != 0:
         state = jax.device_get(jax.tree_map(lambda x: x[0], state))
         checkpoints.save_checkpoint(
-            FLAGS.train_dir, state, int(FLAGS.max_steps), keep=100)
+            FLAGS.train_dir, state, int(FLAGS.max_steps), keep=100
+        )
 
 
 if __name__ == "__main__":

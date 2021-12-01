@@ -39,10 +39,14 @@ class TrainState:
 
 @flax.struct.dataclass
 class Stats:
-    loss: float
-    psnr: float
-    loss_c: float
-    psnr_c: float
+    loss_l: float
+    psnr_l: float
+    loss_cl: float
+    psnr_cl: float
+    loss_r: float
+    psnr_r: float
+    loss_cr: float
+    psnr_cr: float
     weight_l2: float
 
 
@@ -58,124 +62,168 @@ def define_flags():
     """Define flags for both training and evaluation modes."""
     flags.DEFINE_string("train_dir", None, "where to store ckpts and logs")
     flags.DEFINE_string("data_dir", None, "input data directory.")
-    flags.DEFINE_string("config", None,
-                        "using config files to set hyperparameters.")
+    flags.DEFINE_string("config", None, "using config files to set hyperparameters.")
 
     # Dataset Flags
     # TODO(pratuls): rename to dataset_loader and consider cleaning up
-    flags.DEFINE_enum("dataset", "blender",
-                      list(k for k in datasets.dataset_dict.keys()),
-                      "The type of dataset feed to nerf.")
     flags.DEFINE_enum(
-        "batching", "single_image", ["single_image", "all_images"],
+        "dataset",
+        "blender",
+        list(k for k in datasets.dataset_dict.keys()),
+        "The type of dataset feed to nerf.",
+    )
+    flags.DEFINE_enum(
+        "batching",
+        "single_image",
+        ["single_image", "all_images"],
         "source of ray sampling when collecting training batch,"
         "single_image for sampling from only one image in a batch,"
-        "all_images for sampling from all the training images.")
+        "all_images for sampling from all the training images.",
+    )
     flags.DEFINE_bool(
-        "white_bkgd", True, "using white color as default background."
-        "(used in the blender dataset only)")
-    flags.DEFINE_integer("batch_size", 1024,
-                         "the number of rays in a mini-batch (for training).")
-    flags.DEFINE_integer("factor", 4,
-                         "the downsample factor of images, 0 for no downsample.")
+        "white_bkgd",
+        True,
+        "using white color as default background." "(used in the blender dataset only)",
+    )
+    flags.DEFINE_integer(
+        "batch_size", 1024, "the number of rays in a mini-batch (for training)."
+    )
+    flags.DEFINE_integer(
+        "factor", 4, "the downsample factor of images, 0 for no downsample."
+    )
     flags.DEFINE_bool("spherify", False, "set for spherical 360 scenes.")
     flags.DEFINE_bool(
-        "render_path", False, "render generated path if set true."
-        "(used in the llff dataset only)")
+        "render_path",
+        False,
+        "render generated path if set true." "(used in the llff dataset only)",
+    )
     flags.DEFINE_integer(
-        "llffhold", 8, "will take every 1/N images as LLFF test set."
-        "(used in the llff dataset only)")
+        "llffhold",
+        8,
+        "will take every 1/N images as LLFF test set."
+        "(used in the llff dataset only)",
+    )
     flags.DEFINE_bool(
-        "use_pixel_centers", False,
+        "use_pixel_centers",
+        False,
         "If True, generate rays through the center of each pixel. Note: While "
         "this is the correct way to handle rays, it is not the way rays are "
         "handled in the original NeRF paper. Setting this TRUE yields ~ +1 PSNR "
-        "compared to Vanilla NeRF.")
+        "compared to Vanilla NeRF.",
+    )
     flags.DEFINE_string("scene", "001", "Scene ID for dual pixel data")
 
     # Model Flags
-    flags.DEFINE_string("model", "nerf", "name of model to use.")
-    flags.DEFINE_float("near", 2., "near clip of volumetric rendering.")
-    flags.DEFINE_float("far", 6., "far clip of volumentric rendering.")
+    flags.DEFINE_string("model", "lightfieutilsldnerf", "name of model to use.")
+    flags.DEFINE_float("near", 2.0, "near clip of volumetric rendering.")
+    flags.DEFINE_float("far", 6.0, "far clip of volumentric rendering.")
     flags.DEFINE_integer("net_depth", 8, "depth of the first part of MLP.")
     flags.DEFINE_integer("net_width", 256, "width of the first part of MLP.")
-    flags.DEFINE_integer("net_depth_condition", 1,
-                         "depth of the second part of MLP.")
-    flags.DEFINE_integer("net_width_condition", 128,
-                         "width of the second part of MLP.")
+    flags.DEFINE_integer("net_depth_condition", 1, "depth of the second part of MLP.")
+    flags.DEFINE_integer("net_width_condition", 128, "width of the second part of MLP.")
     flags.DEFINE_float("weight_decay_mult", 0, "The multiplier on weight decay")
     flags.DEFINE_integer(
-        "skip_layer", 4, "add a skip connection to the output vector of every"
-        "skip_layer layers.")
+        "skip_layer",
+        4,
+        "add a skip connection to the output vector of every" "skip_layer layers.",
+    )
     flags.DEFINE_integer("num_rgb_channels", 3, "the number of RGB channels.")
-    flags.DEFINE_integer("num_sigma_channels", 1,
-                         "the number of density channels.")
+    flags.DEFINE_integer("num_sigma_channels", 1, "the number of density channels.")
     flags.DEFINE_bool("randomized", True, "use randomized stratified sampling.")
-    flags.DEFINE_integer("min_deg_point", 0,
-                         "Minimum degree of positional encoding for points.")
-    flags.DEFINE_integer("max_deg_point", 10,
-                         "Maximum degree of positional encoding for points.")
-    flags.DEFINE_integer("deg_view", 4,
-                         "Degree of positional encoding for viewdirs.")
     flags.DEFINE_integer(
-        "num_coarse_samples", 64,
-        "the number of samples on each ray for the coarse model.")
-    flags.DEFINE_integer("num_fine_samples", 128,
-                         "the number of samples on each ray for the fine model.")
+        "min_deg_point", 0, "Minimum degree of positional encoding for points."
+    )
+    flags.DEFINE_integer(
+        "max_deg_point", 10, "Maximum degree of positional encoding for points."
+    )
+    flags.DEFINE_integer("deg_view", 4, "Degree of positional encoding for viewdirs.")
+    flags.DEFINE_integer(
+        "num_coarse_samples",
+        64,
+        "the number of samples on each ray for the coarse model.",
+    )
+    flags.DEFINE_integer(
+        "num_fine_samples", 128, "the number of samples on each ray for the fine model."
+    )
+    flags.DEFINE_integer("lightfield_width", 8, "width of the lightfield.")
+    flags.DEFINE_integer("lightfield_height", 8, "height of the lightfield.")
     flags.DEFINE_bool("use_viewdirs", True, "use view directions as a condition.")
     flags.DEFINE_float(
-        "noise_std", None, "std dev of noise added to regularize sigma output."
-        "(used in the llff dataset only)")
-    flags.DEFINE_bool("lindisp", False,
-                      "sampling linearly in disparity rather than depth.")
-    flags.DEFINE_string("net_activation", "relu",
-                        "activation function used within the MLP.")
-    flags.DEFINE_string("rgb_activation", "sigmoid",
-                        "activation function used to produce RGB.")
-    flags.DEFINE_string("sigma_activation", "relu",
-                        "activation function used to produce density.")
+        "noise_std",
+        None,
+        "std dev of noise added to regularize sigma output."
+        "(used in the llff dataset only)",
+    )
     flags.DEFINE_bool(
-        "legacy_posenc_order", False,
-        "If True, revert the positional encoding feature order to an older version of this codebase."
+        "lindisp", False, "sampling linearly in disparity rather than depth."
+    )
+    flags.DEFINE_string(
+        "net_activation", "relu", "activation function used within the MLP."
+    )
+    flags.DEFINE_string(
+        "rgb_activation", "sigmoid", "activation function used to produce RGB."
+    )
+    flags.DEFINE_string(
+        "sigma_activation", "relu", "activation function used to produce density."
+    )
+    flags.DEFINE_bool(
+        "legacy_posenc_order",
+        False,
+        "If True, revert the positional encoding feature order to an older version of this codebase.",
     )
 
     # Train Flags
     flags.DEFINE_float("lr_init", 5e-4, "The initial learning rate.")
     flags.DEFINE_float("lr_final", 5e-6, "The final learning rate.")
     flags.DEFINE_integer(
-        "lr_delay_steps", 0, "The number of steps at the beginning of "
-        "training to reduce the learning rate by lr_delay_mult")
+        "lr_delay_steps",
+        0,
+        "The number of steps at the beginning of "
+        "training to reduce the learning rate by lr_delay_mult",
+    )
     flags.DEFINE_float(
-        "lr_delay_mult", 1., "A multiplier on the learning rate when the step "
-        "is < lr_delay_steps")
-    flags.DEFINE_float("grad_max_norm", 0.,
-                       "The gradient clipping magnitude (disabled if == 0).")
-    flags.DEFINE_float("grad_max_val", 0.,
-                       "The gradient clipping value (disabled if == 0).")
+        "lr_delay_mult",
+        1.0,
+        "A multiplier on the learning rate when the step " "is < lr_delay_steps",
+    )
+    flags.DEFINE_float(
+        "grad_max_norm", 0.0, "The gradient clipping magnitude (disabled if == 0)."
+    )
+    flags.DEFINE_float(
+        "grad_max_val", 0.0, "The gradient clipping value (disabled if == 0)."
+    )
 
-    flags.DEFINE_integer("max_steps", 1000000,
-                         "the number of optimization steps.")
-    flags.DEFINE_integer("save_every", 10000,
-                         "the number of steps to save a checkpoint.")
-    flags.DEFINE_integer("print_every", 100,
-                         "the number of steps between reports to tensorboard.")
+    flags.DEFINE_integer("max_steps", 1000000, "the number of optimization steps.")
     flags.DEFINE_integer(
-        "render_every", 5000, "the number of steps to render a test image,"
-        "better to be x00 for accurate step time record.")
-    flags.DEFINE_integer("gc_every", 10000,
-                         "the number of steps to run python garbage collection.")
+        "save_every", 10000, "the number of steps to save a checkpoint."
+    )
+    flags.DEFINE_integer(
+        "print_every", 100, "the number of steps between reports to tensorboard."
+    )
+    flags.DEFINE_integer(
+        "render_every",
+        5000,
+        "the number of steps to render a test image,"
+        "better to be x00 for accurate step time record.",
+    )
+    flags.DEFINE_integer(
+        "gc_every", 10000, "the number of steps to run python garbage collection."
+    )
 
     # Eval Flags
     flags.DEFINE_bool(
-        "eval_once", True,
+        "eval_once",
+        True,
         "evaluate the model only once if true, otherwise keeping evaluating new"
-        "checkpoints if there's any.")
-    flags.DEFINE_bool("save_output", True,
-                      "save predicted images to disk if True.")
+        "checkpoints if there's any.",
+    )
+    flags.DEFINE_bool("save_output", True, "save predicted images to disk if True.")
     flags.DEFINE_integer(
-        "chunk", 8192,
+        "chunk",
+        8192,
         "the size of chunks for evaluation inferences, set to the value that"
-        "fits your GPU/TPU memory.")
+        "fits your GPU/TPU memory.",
+    )
 
 
 def update_flags(args):
@@ -239,13 +287,14 @@ def render_image(render_fn, rays, rng, normalize_disp, chunk=8192):
     results = []
     for i in range(0, num_rays, chunk):
         # pylint: disable=cell-var-from-loop
-        chunk_rays = namedtuple_map(lambda r: r[i:i + chunk], rays)
+        chunk_rays = namedtuple_map(lambda r: r[i : i + chunk], rays)
         chunk_size = chunk_rays[0].shape[0]
         rays_remaining = chunk_size % jax.device_count()
         if rays_remaining != 0:
             padding = jax.device_count() - rays_remaining
             chunk_rays = namedtuple_map(
-                lambda r: jnp.pad(r, ((0, padding), (0, 0)), mode="edge"), chunk_rays)
+                lambda r: jnp.pad(r, ((0, padding), (0, 0)), mode="edge"), chunk_rays
+            )
         else:
             padding = 0
         # After padding the number of chunk_rays is always divisible by
@@ -260,8 +309,11 @@ def render_image(render_fn, rays, rng, normalize_disp, chunk=8192):
     # Normalize disp for visualization for ndc_rays in llff front-facing scenes.
     if normalize_disp:
         disp = (disp - disp.min()) / (disp.max() - disp.min())
-    return (rgb.reshape((height, width, -1)), disp.reshape(
-        (height, width, -1)), acc.reshape((height, width, -1)))
+    return (
+        rgb.reshape((height, width, -1)),
+        disp.reshape((height, width, -1)),
+        acc.reshape((height, width, -1)),
+    )
 
 
 def compute_psnr(mse):
@@ -273,17 +325,34 @@ def compute_psnr(mse):
     Returns:
       psnr: float, the psnr value.
     """
-    return -10. * jnp.log(mse) / jnp.log(10.)
+    return -10.0 * jnp.log(mse) / jnp.log(10.0)
 
 
-def compute_ssim(img0,
-                 img1,
-                 max_val,
-                 filter_size=11,
-                 filter_sigma=1.5,
-                 k1=0.01,
-                 k2=0.03,
-                 return_map=False):
+def post_process(rgb):
+    """Converts the output rgb values from Nerf to left and right dual pixels.
+
+    Args:
+      rgb: shape (batch x 8 x 8 x 3) if lightfield height and width are 8 and 8.
+
+    Returns:
+      l, r: left and right dual pixels of shape (batch x 3)
+    """
+    batch, lightfield_height, lightfield_width = rgb.shape
+    rgb_l = jnp.mean(rgb[:, :, : int(lightfield_width / 2)], axis=(1, 2))
+    rgb_r = jnp.mean(rgb[:, :, int(lightfield_width / 2) :], axis=(1, 2))
+    return rgb_l, rgb_r
+
+
+def compute_ssim(
+    img0,
+    img1,
+    max_val,
+    filter_size=11,
+    filter_sigma=1.5,
+    k1=0.01,
+    k2=0.03,
+    return_map=False,
+):
     """Computes SSIM from two images.
 
     This function was modeled after tf.image.ssim, and should produce comparable
@@ -305,13 +374,16 @@ def compute_ssim(img0,
     # Construct a 1D Gaussian blur filter.
     hw = filter_size // 2
     shift = (2 * hw - filter_size + 1) / 2
-    f_i = ((jnp.arange(filter_size) - hw + shift) / filter_sigma)**2
+    f_i = ((jnp.arange(filter_size) - hw + shift) / filter_sigma) ** 2
     filt = jnp.exp(-0.5 * f_i)
     filt /= jnp.sum(filt)
 
     # Blur in x and y (faster than the 2D convolution).
-    def filt_fn1(z): return jsp.signal.convolve2d(z, filt[:, None], mode="valid")
-    def filt_fn2(z): return jsp.signal.convolve2d(z, filt[None, :], mode="valid")
+    def filt_fn1(z):
+        return jsp.signal.convolve2d(z, filt[:, None], mode="valid")
+
+    def filt_fn2(z):
+        return jsp.signal.convolve2d(z, filt[None, :], mode="valid")
 
     # Vmap the blurs to the tensor size, and then compose them.
     num_dims = len(img0.shape)
@@ -320,26 +392,28 @@ def compute_ssim(img0,
         filt_fn1 = jax.vmap(filt_fn1, in_axes=d, out_axes=d)
         filt_fn2 = jax.vmap(filt_fn2, in_axes=d, out_axes=d)
 
-    def filt_fn(z): return filt_fn1(filt_fn2(z))
+    def filt_fn(z):
+        return filt_fn1(filt_fn2(z))
 
     mu0 = filt_fn(img0)
     mu1 = filt_fn(img1)
     mu00 = mu0 * mu0
     mu11 = mu1 * mu1
     mu01 = mu0 * mu1
-    sigma00 = filt_fn(img0**2) - mu00
-    sigma11 = filt_fn(img1**2) - mu11
+    sigma00 = filt_fn(img0 ** 2) - mu00
+    sigma11 = filt_fn(img1 ** 2) - mu11
     sigma01 = filt_fn(img0 * img1) - mu01
 
     # Clip the variances and covariances to valid values.
     # Variance must be non-negative:
-    sigma00 = jnp.maximum(0., sigma00)
-    sigma11 = jnp.maximum(0., sigma11)
+    sigma00 = jnp.maximum(0.0, sigma00)
+    sigma11 = jnp.maximum(0.0, sigma11)
     sigma01 = jnp.sign(sigma01) * jnp.minimum(
-        jnp.sqrt(sigma00 * sigma11), jnp.abs(sigma01))
+        jnp.sqrt(sigma00 * sigma11), jnp.abs(sigma01)
+    )
 
-    c1 = (k1 * max_val)**2
-    c2 = (k2 * max_val)**2
+    c1 = (k1 * max_val) ** 2
+    c2 = (k2 * max_val) ** 2
     numer = (2 * mu01 + c1) * (2 * sigma01 + c2)
     denom = (mu00 + mu11 + c1) * (sigma00 + sigma11 + c2)
     ssim_map = numer / denom
@@ -356,16 +430,14 @@ def save_img(img, pth):
       pth: string, path to save the image to.
     """
     with open_file(pth, "wb") as imgout:
-        Image.fromarray(np.array(
-            (np.clip(img, 0., 1.) * 255.).astype(jnp.uint8))).save(imgout, "PNG")
+        Image.fromarray(
+            np.array((np.clip(img, 0.0, 1.0) * 255.0).astype(jnp.uint8))
+        ).save(imgout, "PNG")
 
 
-def learning_rate_decay(step,
-                        lr_init,
-                        lr_final,
-                        max_steps,
-                        lr_delay_steps=0,
-                        lr_delay_mult=1):
+def learning_rate_decay(
+    step, lr_init, lr_final, max_steps, lr_delay_steps=0, lr_delay_mult=1
+):
     """Continuous learning rate decay function.
 
     The returned rate is lr_init when step=0 and lr_final when step=max_steps, and
@@ -389,9 +461,10 @@ def learning_rate_decay(step,
     if lr_delay_steps > 0:
         # A kind of reverse cosine decay.
         delay_rate = lr_delay_mult + (1 - lr_delay_mult) * np.sin(
-            0.5 * np.pi * np.clip(step / lr_delay_steps, 0, 1))
+            0.5 * np.pi * np.clip(step / lr_delay_steps, 0, 1)
+        )
     else:
-        delay_rate = 1.
+        delay_rate = 1.0
     t = np.clip(step / max_steps, 0, 1)
     log_lerp = np.exp(np.log(lr_init) * (1 - t) + np.log(lr_final) * t)
     return delay_rate * log_lerp
@@ -400,7 +473,8 @@ def learning_rate_decay(step,
 def shard(xs):
     """Split data into shards for multiple devices along the first dimension."""
     return jax.tree_map(
-        lambda x: x.reshape((jax.local_device_count(), -1) + x.shape[1:]), xs)
+        lambda x: x.reshape((jax.local_device_count(), -1) + x.shape[1:]), xs
+    )
 
 
 def to_device(xs):
