@@ -558,7 +558,9 @@ class Pixel4DP(Dataset):
                                             np.repeat(np.array([[0, 1], ]), sampled_coords.shape[0]//2, axis=0)), axis=0)
 
             sampled_coords_neighbors = np.where(sampled_coords < [self.w - 1, self.h - 1], sampled_coords + neighbor_inds, sampled_coords - neighbor_inds)
-            sampled_coords = np.stack((sampled_coords, sampled_coords_neighbors), axis=0).reshape((-1, 2))
+            print("sampled_coords shape", sampled_coords.shape)
+            print("sampled_coords_neighbors shape", sampled_coords_neighbors.shape)
+            sampled_coords = np.stack((sampled_coords, sampled_coords_neighbors), axis=0).transpose(1, 0, 2).reshape((-1, 2))
             batch_pixels = self.images[0][sampled_coords[:, 1], sampled_coords[:, 0], ...]
             batch_rays = utils.namedtuple_map(lambda r: r[sampled_coords[:, 1], sampled_coords[:, 0]], self.rays)
         else:

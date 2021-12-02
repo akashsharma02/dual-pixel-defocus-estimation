@@ -34,6 +34,7 @@ import os
 from nerf import datasets
 from nerf import models
 from nerf import utils
+from nerf import loss
 
 FLAGS = flags.FLAGS
 
@@ -82,6 +83,8 @@ def train_step(model, rng, state, batch, lr):
         psnr_r = utils.compute_psnr(loss_r)
         loss_l = ((rgb_l - batch["pixels"][Ellipsis, 0]) ** 2).mean()
         psnr_l = utils.compute_psnr(loss_l)
+        rgb_pixels = rgb.reshape((-1, 2, FLAGS.lightfield_height, FLAGS.lightfield_width)).transpose(0, 2, 3, 1)
+        smoothness_loss = loss.smoothness_loss(rgb_pixels.reshape((-1,)), reduction='sum')
         if len(ret) > 1:
             # If there are both coarse and fine predictions, we compute the loss for
             # the coarse prediction (ret[0]) as well.
@@ -91,9 +94,12 @@ def train_step(model, rng, state, batch, lr):
             psnr_cl = utils.compute_psnr(loss_cl)
             loss_cr = ((rgb_cr - batch["pixels"][Ellipsis, 1]) ** 2).mean()
             psnr_cr = utils.compute_psnr(loss_cr)
+            rgb_c_pixels = rgb_c.reshape((-1, 2, FLAGS.lightfield_height, FLAGS.lightfield_width)).transpose(0, 2, 3, 1)
+            smoothness_loss_c = loss.smoothness_loss(rgb_c_pixels.reshape((-1,)), reduction='sum')
         else:
             loss_cr = loss_cl = 0.0
             psnr_cr = psnr_cl = 0.0
+            smoothness_loss_c = 0.0
 
         def tree_sum_fn(fn):
             return jax.tree_util.tree_reduce(
@@ -114,9 +120,11 @@ def train_step(model, rng, state, batch, lr):
             psnr_cl=psnr_cl,
             psnr_cr=psnr_cr,
             weight_l2=weight_l2,
+            smoothness_loss=smoothness_loss,
+            smoothness_loss_c=smoothness_loss_c
         )
         return (
-            loss_l + loss_r + loss_cl + loss_cr + FLAGS.weight_decay_mult * weight_l2,
+            loss_l + loss_r + loss_cl + loss_cr + smoothness_loss + smoothness_loss_c + .weight_decay_mult * weight_l2,
             stats,
         )
 
@@ -239,6 +247,7 @@ def main(unused_argv):
         if jax.process_index() == 0:
             if step % FLAGS.print_every == 0:
                 summary_writer.scalar("train_loss", stats.loss_l[0], step)
+                summary_writer.scalar("train_smoothness_loss", stats.smoothness_loss[0], step)
                 summary_writer.scalar("train_psnr", stats.psnr_l[0], step)
                 summary_writer.scalar("train_loss_coarse", stats.loss_cl[0], step)
                 summary_writer.scalar("train_psnr_coarse", stats.psnr_cl[0], step)
@@ -260,6 +269,7 @@ def main(unused_argv):
                     + f"/{FLAGS.max_steps:d}: "
                     + f"i_loss={stats.loss_l[0]:0.4f}, "
                     + f"avg_loss={avg_loss:0.4f}, "
+                    + f"smoothness_loss={stats.smoothness_loss[0]:0.4f}, "
                     + f"weight_l2={stats.weight_l2[0]:0.2e}, "
                     + f"lr={lr:0.2e}, "
                     + f"{rays_per_sec:0.0f} rays/sec"

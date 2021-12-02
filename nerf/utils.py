@@ -48,6 +48,8 @@ class Stats:
     loss_cr: float
     psnr_cr: float
     weight_l2: float
+    smoothness_loss: float
+    smoothness_loss_c: float
 
 
 Rays = collections.namedtuple("Rays", ("origins", "directions", "viewdirs"))
