@@ -289,6 +289,14 @@ def main(unused_argv):
             # Log eval summaries on host 0.
             if jax.process_index() == 0:
                 pred_color_l, pred_color_r = utils.post_process(pred_color)
+                pred_color_l = pred_color_l.reshape(test_case["pixels"][..., 1].shape)
+
+                pred_color_r = pred_color_r.reshape(test_case["pixels"][..., 1].shape)
+
+                print(pred_color_r.shape)
+                # print(
+                #     f"Pred color shapes: {pred_color_r.shape}, pixels shape: {test_case['pixels'][..., 1].shape}"
+                # )
                 loss_r = ((pred_color_r - test_case["pixels"][..., 1]) ** 2).mean()
                 psnr_r = utils.compute_psnr(loss_r)
                 loss_l = ((pred_color_l - test_case["pixels"][..., 0]) ** 2).mean()

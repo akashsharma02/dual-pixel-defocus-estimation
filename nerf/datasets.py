@@ -609,7 +609,9 @@ class Pixel4DP(Dataset):
             offset_y = (images.shape[-3] - crop_y) // 2
             offset_x = (images.shape[-2] - crop_x) // 2
 
-            return images[..., offset_y:offset_y + crop_y, offset_x:offset_x + crop_x, :]
+            return images[
+                ..., offset_y : offset_y + crop_y, offset_x : offset_x + crop_x, :
+            ]
 
         if args.factor > 0:
             print(args.factor)
@@ -622,6 +624,7 @@ class Pixel4DP(Dataset):
         right_image = _load_and_preprocess_pixel_data(image_fnames[1])
 
         patch_params = dict(patch_size=168, num_rows=6, num_cols=8)
+        # patch_params = dict(patch_size=21, num_rows=3, num_cols=4)
 
         self.images = np.stack((left_image, right_image), axis=-1).squeeze()
         self.images = _crop_image_central_fov(self.images, **patch_params)
