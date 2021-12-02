@@ -12,3 +12,6 @@ randomized: true
 lightfield_width: 8
 lightfield_height: 8
 num_rgb_channels: 1
+render_every: 10000
+near: 0.1
+far: 4.0

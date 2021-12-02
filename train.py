@@ -221,6 +221,7 @@ def main(unused_argv):
     stats_trace = []
     reset_timer = True
     for step, batch in zip(range(init_step, FLAGS.max_steps + 1), pdataset):
+        # print("Reached the start of a new iteration")
         if reset_timer:
             t_loop_start = time.time()
             reset_timer = False
@@ -289,6 +290,18 @@ def main(unused_argv):
             # Log eval summaries on host 0.
             if jax.process_index() == 0:
                 pred_color_l, pred_color_r = utils.post_process(pred_color)
+                pred_color_l = pred_color_l.reshape(test_case["pixels"][..., 1].shape)
+
+                pred_color_r = pred_color_r.reshape(test_case["pixels"][..., 1].shape)
+
+                print(pred_color_r.shape)
+                save_right = pred_color_r
+                save_left = pred_color_l
+                np.save(f'/data3/tkhurana/misc/dualpixel/results/right_{step}', save_right)
+                np.save(f'/data3/tkhurana/misc/dualpixel/results/left_{step}', save_left)
+                # print(
+                #     f"Pred color shapes: {pred_color_r.shape}, pixels shape: {test_case['pixels'][..., 1].shape}"
+                # )
                 loss_r = ((pred_color_r - test_case["pixels"][..., 1]) ** 2).mean()
                 psnr_r = utils.compute_psnr(loss_r)
                 loss_l = ((pred_color_l - test_case["pixels"][..., 0]) ** 2).mean()
@@ -302,10 +315,14 @@ def main(unused_argv):
                 print(f"Eval {step}: {eval_time:0.3f}s., {rays_per_sec:0.0f} rays/sec")
                 summary_writer.scalar("test_psnr", psnr, step)
                 # summary_writer.scalar("test_ssim", ssim, step)
-                summary_writer.image("test_pred_color", pred_color, step)
-                summary_writer.image("test_pred_disp", pred_disp, step)
-                summary_writer.image("test_pred_acc", pred_acc, step)
-                summary_writer.image("test_target", test_case["pixels"], step)
+                summary_writer.image("test_pred_color_left", pred_color_l, step)
+                summary_writer.image("test_pred_color_right", pred_color_r, step)
+                summary_writer.image("test_target_left", test_case["pixels"][..., 0], step)
+                summary_writer.image("test_target_right", test_case["pixels"][..., 1], step)
+
+            print("Going to collect garbage now ...")
+            gc.collect()
+            print("Collected garbage")
 
     if FLAGS.max_steps % FLAGS.save_every != 0:
         state = jax.device_get(jax.tree_map(lambda x: x[0], state))

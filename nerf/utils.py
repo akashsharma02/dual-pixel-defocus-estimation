@@ -208,7 +208,7 @@ def define_flags():
         "better to be x00 for accurate step time record.",
     )
     flags.DEFINE_integer(
-        "gc_every", 10000, "the number of steps to run python garbage collection."
+        "gc_every", 5000, "the number of steps to run python garbage collection."
     )
 
     # Eval Flags
@@ -221,7 +221,7 @@ def define_flags():
     flags.DEFINE_bool("save_output", True, "save predicted images to disk if True.")
     flags.DEFINE_integer(
         "chunk",
-        512,
+        128,
         "the size of chunks for evaluation inferences, set to the value that"
         "fits your GPU/TPU memory.",
     )
@@ -306,18 +306,20 @@ def render_image(render_fn, rays, rng, normalize_disp, chunk=8192):
         start, stop = host_id * rays_per_host, (host_id + 1) * rays_per_host
         chunk_rays = namedtuple_map(lambda r: shard(r[start:stop]), chunk_rays)
         chunk_results = render_fn(key_0, key_1, chunk_rays)[-1]
-        print(f"chunk_results rgb shape: {chunk_results[0].shape}")
+        # print(f"chunk_results rgb shape: {chunk_results[0].shape}")
         results.append([unshard(x[0], padding) for x in chunk_results])
         # pylint: enable=cell-var-from-loop
     rgb, disp, acc = [jnp.concatenate(r, axis=0) for r in zip(*results)]
+    print(f"Final image rgb shape: {rgb.shape}")
     # Normalize disp for visualization for ndc_rays in llff front-facing scenes.
     if normalize_disp:
         disp = (disp - disp.min()) / (disp.max() - disp.min())
-    return (
-        rgb.reshape((height, width, -1)),
-        disp.reshape((height, width, -1)),
-        acc.reshape((height, width, -1)),
-    )
+    # return (
+    #     rgb.reshape((height, width, rgb.shape[-2], rgb.shape[-1])),
+    #     disp.reshape((height, width, disp.shape[-2], rgb.shape[-1])),
+    #     acc.reshape((height, width, acc.shape[-2], rgb.shape[-1])),
+    # )
+    return (rgb, disp, acc)
 
 
 def compute_psnr(mse):
