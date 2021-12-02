@@ -29,6 +29,7 @@ from jax import config
 from jax import random
 import jax.numpy as jnp
 import numpy as np
+import os
 
 from nerf import datasets
 from nerf import models
@@ -206,7 +207,7 @@ def main(unused_argv):
         utils.makedirs(FLAGS.train_dir)
     state = checkpoints.restore_checkpoint(FLAGS.train_dir, state)
     # Resume training a the step of the last checkpoint.
-    init_step = state.optimizer.state.step + 1
+    init_step = state.optimizer.state.step # + 1: commenting so that first the test phase occurs
     state = flax.jax_utils.replicate(state)
 
     if jax.process_index() == 0:
@@ -263,7 +264,7 @@ def main(unused_argv):
                     + f"lr={lr:0.2e}, "
                     + f"{rays_per_sec:0.0f} rays/sec"
                 )
-            if step % FLAGS.save_every == 0:
+            if step % FLAGS.save_every == 0 and not os.path.exists(os.path.join(FLAGS.train_dir, f'checkpoint_{int(step)}')):
                 state_to_save = jax.device_get(jax.tree_map(lambda x: x[0], state))
                 checkpoints.save_checkpoint(
                     FLAGS.train_dir, state_to_save, int(step), keep=100
