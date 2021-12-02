@@ -531,16 +531,7 @@ class Pixel4DP(Dataset):
         self._load_renderings(args)
         self._generate_rays()
 
-        if args.batching == "single_image":
-            self.images = self.images.reshape([-1, self.resolution, 2])
-            self.rays = utils.namedtuple_map(
-                lambda r: r.reshape(
-                    [self.resolution, r.shape[-3], r.shape[-2], r.shape[-1]]
-                ),
-                self.rays,
-            )
-            self.rays = utils.namedtuple_map(lambda r: np.expand_dims(r, 0), self.rays,)
-        else:
+        if args.batching != "single_image":
             raise NotImplementedError(
                 f"{args.batching} batching strategy is not implemented."
             )
@@ -549,12 +540,27 @@ class Pixel4DP(Dataset):
         """Sample next training batch."""
 
         if self.batching == "single_image":
-            # print("rays 0 0 shape 0", self.rays[0][0].shape[0])
-            ray_indices = np.random.randint(
-                0, self.rays[0][0].shape[0], (self.batch_size,)
-            )
-            batch_pixels = self.images[0][ray_indices]
-            batch_rays = utils.namedtuple_map(lambda r: r[0][ray_indices], self.rays)
+            # Sample half number of rays, and then sample their neighbors (right and down)
+            coords = np.stack(np.meshgrid(  # pylint: disable=unbalanced-tuple-unpacking
+                np.arange(self.w, dtype=int),  # X-Axis (columns)
+                np.arange(self.h, dtype=int),  # Y-Axis (rows)
+                indexing="xy",
+            ), axis=-1)
+            coords = coords.reshape((-1, 2))
+            print(coords.shape)
+            sampled_inds = np.random.choice(coords.shape[0], self.batch_size//2, replace=False)
+
+            print(self.batch_size)
+            print(f"Sampled indices shape: {sampled_inds.shape}")
+
+            sampled_coords = coords[sampled_inds]
+            neighbor_inds = np.concatenate((np.repeat(np.array([[1, 0], ]), sampled_coords.shape[0]//2, axis=0),
+                                            np.repeat(np.array([[0, 1], ]), sampled_coords.shape[0]//2, axis=0)), axis=0)
+
+            sampled_coords_neighbors = np.where(sampled_coords < [self.w - 1, self.h - 1], sampled_coords + neighbor_inds, sampled_coords - neighbor_inds)
+            sampled_coords = np.stack((sampled_coords, sampled_coords_neighbors), axis=0).reshape((-1, 2))
+            batch_pixels = self.images[0][sampled_coords[:, 1], sampled_coords[:, 0], ...]
+            batch_rays = utils.namedtuple_map(lambda r: r[sampled_coords[:, 1], sampled_coords[:, 0]], self.rays)
         else:
             raise NotImplementedError(
                 f"{self.batching} batching strategy is not implemented."
