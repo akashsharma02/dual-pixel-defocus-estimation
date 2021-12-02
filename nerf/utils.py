@@ -338,10 +338,10 @@ def post_process(rgb):
     """Converts the output rgb values from Nerf to left and right dual pixels.
 
     Args:
-      rgb: shape (batch x 8 x 8 x 3) if lightfield height and width are 8 and 8.
+      rgb: shape (batch x 8 x 8) if lightfield height and width are 8 and 8.
 
     Returns:
-      l, r: left and right dual pixels of shape (batch x 3)
+      l, r: left and right dual pixels of shape (batch,)
     """
     batch, lightfield_height, lightfield_width = rgb.shape
     rgb_l = jnp.mean(rgb[:, :, : int(lightfield_width / 2)], axis=(1, 2))
@@ -427,7 +427,7 @@ def compute_ssim(
     return ssim_map if return_map else ssim
 
 
-def save_img(img, pth):
+def save_img(img, pth, minmax_scaling=False):
     """Save an image to disk.
 
     Args:
@@ -436,9 +436,15 @@ def save_img(img, pth):
       pth: string, path to save the image to.
     """
     with open_file(pth, "wb") as imgout:
-        Image.fromarray(
-            np.array((np.clip(img, 0.0, 1.0) * 255.0).astype(jnp.uint8))
-        ).save(imgout, "PNG")
+        if minmax_scaling:
+            img = (img - img.min()) / (img.max() - img.min())
+            Image.fromarray(
+                np.array((img * 255.0).astype(jnp.uint8))
+            ).save(imgout, "PNG")
+        else:
+            Image.fromarray(
+                np.array((np.clip(img, 0.0, 1.0) * 255.0).astype(jnp.uint8))
+            ).save(imgout, "PNG")
 
 
 def learning_rate_decay(
