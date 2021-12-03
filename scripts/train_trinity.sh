@@ -14,7 +14,7 @@
 
 #!/bin/bash
 CONFIG=configs/dual-pixel
-EXPERIMENT=dual-pixel-debug
+EXPERIMENT=dual-pixel-smoothness
 # DATA_DIR=/home/akashsharma/Documents/datasets/dual-pixel-defocus/
 # TRAIN_DIR=/home/akashsharma/tmp/dual-pixel/$EXPERIMENT
 

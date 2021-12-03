@@ -189,6 +189,11 @@ def define_flags():
         "A multiplier on the learning rate when the step " "is < lr_delay_steps",
     )
     flags.DEFINE_float(
+        "smoothness_loss_mult",
+        10.0,
+        "A multiplier on the smooth L1 loss",
+    )
+    flags.DEFINE_float(
         "grad_max_norm", 0.0, "The gradient clipping magnitude (disabled if == 0)."
     )
     flags.DEFINE_float(

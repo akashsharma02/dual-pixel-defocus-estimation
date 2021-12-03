@@ -61,13 +61,13 @@ def train_step(model, rng, state, batch, lr):
 
     def loss_fn(variables):
         rays = batch["rays"]
-        print(
-            "shape of rays",
-            rays.origins.shape,
-            rays.directions.shape,
-            rays.viewdirs.shape,
-        )
-        print("shape of batch pixels", batch["pixels"])
+        # print(
+        #     "shape of rays",
+        #     rays.origins.shape,
+        #     rays.directions.shape,
+        #     rays.viewdirs.shape,
+        # )
+        # print("shape of batch pixels", batch["pixels"])
         ret = model.apply(variables, key_0, key_1, rays, FLAGS.randomized)
         if len(ret) not in (1, 2):
             raise ValueError(
@@ -76,15 +76,15 @@ def train_step(model, rng, state, batch, lr):
             )
         # The main prediction is always at the end of the ret list.
         rgb, unused_disp, unused_acc = ret[-1]
-        print("shape of rgb before", rgb.shape)
+        # print("shape of rgb before", rgb.shape)
         rgb_l, rgb_r = utils.post_process(rgb)
-        print("shape of rgb", rgb_l.shape)
+        # print("shape of rgb", rgb_l.shape)
         loss_r = ((rgb_r - batch["pixels"][Ellipsis, 1]) ** 2).mean()
         psnr_r = utils.compute_psnr(loss_r)
         loss_l = ((rgb_l - batch["pixels"][Ellipsis, 0]) ** 2).mean()
         psnr_l = utils.compute_psnr(loss_l)
         rgb_pixels = rgb.reshape((-1, 2, FLAGS.lightfield_height, FLAGS.lightfield_width)).transpose(0, 2, 3, 1)
-        smoothness_loss = loss.smoothness_loss(rgb_pixels.reshape((-1,)), reduction='sum')
+        smoothness_loss = loss.smooth_l1_loss(rgb_pixels.reshape((-1,)), reduction='sum')
         if len(ret) > 1:
             # If there are both coarse and fine predictions, we compute the loss for
             # the coarse prediction (ret[0]) as well.
@@ -95,7 +95,7 @@ def train_step(model, rng, state, batch, lr):
             loss_cr = ((rgb_cr - batch["pixels"][Ellipsis, 1]) ** 2).mean()
             psnr_cr = utils.compute_psnr(loss_cr)
             rgb_c_pixels = rgb_c.reshape((-1, 2, FLAGS.lightfield_height, FLAGS.lightfield_width)).transpose(0, 2, 3, 1)
-            smoothness_loss_c = loss.smoothness_loss(rgb_c_pixels.reshape((-1,)), reduction='sum')
+            smoothness_loss_c = loss.smooth_l1_loss(rgb_c_pixels.reshape((-1,)), reduction='sum')
         else:
             loss_cr = loss_cl = 0.0
             psnr_cr = psnr_cl = 0.0
@@ -124,7 +124,7 @@ def train_step(model, rng, state, batch, lr):
             smoothness_loss_c=smoothness_loss_c
         )
         return (
-            loss_l + loss_r + loss_cl + loss_cr + smoothness_loss + smoothness_loss_c + .weight_decay_mult * weight_l2,
+            loss_l + loss_r + loss_cl + loss_cr + FLAGS.smoothness_loss_mult * smoothness_loss + FLAGS.smoothness_loss_mult * smoothness_loss_c + FLAGS.weight_decay_mult * weight_l2,
             stats,
         )
 
@@ -215,7 +215,7 @@ def main(unused_argv):
         utils.makedirs(FLAGS.train_dir)
     state = checkpoints.restore_checkpoint(FLAGS.train_dir, state)
     # Resume training a the step of the last checkpoint.
-    init_step = state.optimizer.state.step # + 1: commenting so that first the test phase occurs
+    init_step = state.optimizer.state.step + 1 # : commenting so that first the test phase occurs
     state = flax.jax_utils.replicate(state)
 
     if jax.process_index() == 0:
@@ -310,7 +310,7 @@ def main(unused_argv):
 
                 pred_color_r = pred_color_r.reshape(test_case["pixels"][..., 1].shape)
 
-                print(pred_color_r.shape)
+                # print(pred_color_r.shape)
                 save_right = pred_color_r
                 save_left = pred_color_l
                 np.save(f'/data3/tkhurana/misc/dualpixel/results/right_{step}', save_right)

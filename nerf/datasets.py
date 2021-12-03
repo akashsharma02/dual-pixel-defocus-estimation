@@ -547,19 +547,19 @@ class Pixel4DP(Dataset):
                 indexing="xy",
             ), axis=-1)
             coords = coords.reshape((-1, 2))
-            print(coords.shape)
+            # print(coords.shape)
             sampled_inds = np.random.choice(coords.shape[0], self.batch_size//2, replace=False)
 
-            print(self.batch_size)
-            print(f"Sampled indices shape: {sampled_inds.shape}")
+            # print(self.batch_size)
+            # print(f"Sampled indices shape: {sampled_inds.shape}")
 
             sampled_coords = coords[sampled_inds]
             neighbor_inds = np.concatenate((np.repeat(np.array([[1, 0], ]), sampled_coords.shape[0]//2, axis=0),
                                             np.repeat(np.array([[0, 1], ]), sampled_coords.shape[0]//2, axis=0)), axis=0)
 
             sampled_coords_neighbors = np.where(sampled_coords < [self.w - 1, self.h - 1], sampled_coords + neighbor_inds, sampled_coords - neighbor_inds)
-            print("sampled_coords shape", sampled_coords.shape)
-            print("sampled_coords_neighbors shape", sampled_coords_neighbors.shape)
+            # print("sampled_coords shape", sampled_coords.shape)
+            # print("sampled_coords_neighbors shape", sampled_coords_neighbors.shape)
             sampled_coords = np.stack((sampled_coords, sampled_coords_neighbors), axis=0).transpose(1, 0, 2).reshape((-1, 2))
             batch_pixels = self.images[0][sampled_coords[:, 1], sampled_coords[:, 0], ...]
             batch_rays = utils.namedtuple_map(lambda r: r[sampled_coords[:, 1], sampled_coords[:, 0]], self.rays)
@@ -631,8 +631,8 @@ class Pixel4DP(Dataset):
         left_image = _load_and_preprocess_pixel_data(image_fnames[0])
         right_image = _load_and_preprocess_pixel_data(image_fnames[1])
 
-        patch_params = dict(patch_size=168, num_rows=6, num_cols=8)
-        # patch_params = dict(patch_size=42, num_rows=3, num_cols=4)
+        # patch_params = dict(patch_size=168, num_rows=6, num_cols=8)
+        patch_params = dict(patch_size=42, num_rows=3, num_cols=4)
 
         self.images = np.stack((left_image, right_image), axis=-1).squeeze()
         self.images = _crop_image_central_fov(self.images, **patch_params)

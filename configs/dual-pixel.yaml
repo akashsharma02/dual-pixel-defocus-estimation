@@ -7,12 +7,12 @@ num_coarse_samples: 64
 num_fine_samples: 128
 use_viewdirs: true
 white_bkgd: true
-batch_size: 8
+batch_size: 512
 randomized: true
 lightfield_width: 8
 lightfield_height: 8
 num_rgb_channels: 1
-render_every: 10000
+render_every: 5000
 near: 0.1
 far: 4.0
 max_steps: 40000
