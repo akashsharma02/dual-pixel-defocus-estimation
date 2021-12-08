@@ -207,7 +207,7 @@ def main(unused_argv):
         utils.makedirs(FLAGS.train_dir)
     state = checkpoints.restore_checkpoint(FLAGS.train_dir, state)
     # Resume training a the step of the last checkpoint.
-    init_step = state.optimizer.state.step # + 1: commenting so that first the test phase occurs
+    init_step = state.optimizer.state.step  # + 1: commenting so that first the test phase occurs
     state = flax.jax_utils.replicate(state)
 
     if jax.process_index() == 0:
