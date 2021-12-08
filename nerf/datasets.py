@@ -563,10 +563,10 @@ class Pixel4DP(Dataset):
             neighbor_inds = np.concatenate(
                 (
                     np.repeat(
-                        np.array([[1, 0],]), sampled_coords.shape[0] // 2, axis=0
+                        np.array([[1, 0], ]), sampled_coords.shape[0] // 2, axis=0
                     ),
                     np.repeat(
-                        np.array([[0, 1],]), sampled_coords.shape[0] // 2, axis=0
+                        np.array([[0, 1], ]), sampled_coords.shape[0] // 2, axis=0
                     ),
                 ),
                 axis=0,
@@ -660,39 +660,39 @@ class Pixel4DP(Dataset):
             offset_x = (images.shape[-2] - crop_x) // 2
 
             return images[
-                ..., offset_y : offset_y + crop_y, offset_x : offset_x + crop_x, :
-            ]
+                ..., offset_y: offset_y + crop_y, offset_x: offset_x + crop_x, :
+            ], offset_y, offset_x
 
         if args.factor > 0:
-            print(args.factor)
             raise ValueError(
-                "Pixel4DP dataset only supports factor=0 {} " "set.".format(args.factor)
+                f"Pixel4DP dataset only supports factor=0, but{args.factor} set."
             )
 
         left_image, right_image = None, None
         left_image = _load_and_preprocess_pixel_data(image_fnames[0])
         right_image = _load_and_preprocess_pixel_data(image_fnames[1])
 
+        _, w = left_image.shape[0], left_image.shape[1]
+        self.camera_angle_x = meta["camera_angle_x"]
+        self.focal = 0.5 * w / math.tan(0.5 * self.camera_angle_x)
+        print(f"Focal length: {self.focal} px")
+        self.aperture_size = (
+            math.tan(0.5 * self.camera_angle_x) * self.focal * meta["pixel_pitch"] * 2
+        )
+        print(f"Aperture size: {self.aperture_size*1000} mm")
+
         patch_params = dict(patch_size=168, num_rows=6, num_cols=8)
         # patch_params = dict(patch_size=42, num_rows=3, num_cols=4)
 
         self.images = np.stack((left_image, right_image), axis=-1).squeeze()
-        self.images = _crop_image_central_fov(self.images, **patch_params)
+        self.images, self.offset_y, self.offset_x = _crop_image_central_fov(self.images, **patch_params)
         self.images = self.images[None, :]
-        # print(self.images.shape)
 
-        # TODO: Crop images if we use the calibrated blur kernels
         self.h, self.w = self.images.shape[-3], self.images.shape[-2]
-        # print(self.h, self.w)
+        print(self.h, self.w)
         self.resolution = self.h * self.w
-        self.camera_angle_x = meta["camera_angle_x"]
         # Focal length in pixels (about 801 pixels)
-        self.focal = 0.5 * self.w / np.tan(0.5 * self.camera_angle_x)
         # Lens aperture size in m:
-        self.aperture_size = (
-            math.tan(0.5 * self.camera_angle_x) * self.focal * meta["pixel_pitch"] * 2
-        )
-        # print(f"Aperture size: {self.aperture_size}")
         self.n_examples = self.images.shape[0]
 
     def _generate_rays(self):
@@ -706,8 +706,8 @@ class Pixel4DP(Dataset):
 
         camera_dirs = np.stack(
             [
-                (x - self.w * 0.5) / self.focal,
-                -(y - self.h * 0.5) / self.focal,
+                (x - self.w * 0.5 - self.offset_x) / self.focal,
+                -(y - self.h * 0.5 - self.offset_y) / self.focal,
                 -np.ones_like(x),
             ],
             axis=-1,

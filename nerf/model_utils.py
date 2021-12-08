@@ -33,7 +33,7 @@ class MLP(nn.Module):
     net_width: int = 256  # The width of the first part of MLP.
     net_depth_condition: int = 1  # The depth of the second part of MLP.
     net_width_condition: int = 128  # The width of the second part of MLP.
-    net_activation: Callable[Ellipsis, Any] = nn.relu  # The activation function.
+    net_activation: Callable[..., Any] = nn.relu  # The activation function.
     skip_layer: int = 4  # The layer to add skip layers to.
     num_rgb_channels: int = 3  # The number of RGB channels.
     num_sigma_channels: int = 1  # The number of sigma channels.
@@ -95,8 +95,8 @@ class MLP(nn.Module):
 
 def cast_rays(z_vals, origins, directions):
     return (
-        origins[Ellipsis, None, :]
-        + z_vals[Ellipsis, None] * directions[Ellipsis, None, :]
+        origins[..., None, :]
+        + z_vals[..., None] * directions[..., None, :]
     )
 
 
@@ -128,14 +128,14 @@ def sample_along_rays(
         z_vals = near * (1.0 - t_vals) + far * t_vals
 
     if randomized:
-        mids = 0.5 * (z_vals[Ellipsis, 1:] + z_vals[Ellipsis, :-1])
-        upper = jnp.concatenate([mids, z_vals[Ellipsis, -1:]], -1)
-        lower = jnp.concatenate([z_vals[Ellipsis, :1], mids], -1)
+        mids = 0.5 * (z_vals[..., 1:] + z_vals[..., :-1])
+        upper = jnp.concatenate([mids, z_vals[..., -1:]], -1)
+        lower = jnp.concatenate([z_vals[..., :1], mids], -1)
         t_rand = random.uniform(key, [batch_size, num_samples])
         z_vals = lower + (upper - lower) * t_rand
     else:
         # Broadcast z_vals to make the returned shape consistent.
-        z_vals = jnp.broadcast_to(z_vals[None, Ellipsis], [batch_size, num_samples])
+        z_vals = jnp.broadcast_to(z_vals[None, ...], [batch_size, num_samples])
 
     coords = cast_rays(z_vals, origins, directions)
     return z_vals, coords
@@ -160,13 +160,13 @@ def posenc(x, min_deg, max_deg, legacy_posenc_order=False):
         return x
     scales = jnp.array([2 ** i for i in range(min_deg, max_deg)])
     if legacy_posenc_order:
-        xb = x[Ellipsis, None, :] * scales[:, None]
+        xb = x[..., None, :] * scales[:, None]
         four_feat = jnp.reshape(
             jnp.sin(jnp.stack([xb, xb + 0.5 * jnp.pi], -2)), list(x.shape[:-1]) + [-1]
         )
     else:
         xb = jnp.reshape(
-            (x[Ellipsis, None, :] * scales[:, None]), list(x.shape[:-1]) + [-1]
+            (x[..., None, :] * scales[:, None]), list(x.shape[:-1]) + [-1]
         )
         four_feat = jnp.sin(jnp.concatenate([xb, xb + 0.5 * jnp.pi], axis=-1))
     return jnp.concatenate([x] + [four_feat], axis=-1)
@@ -188,28 +188,27 @@ def volumetric_rendering(rgb, sigma, z_vals, dirs, white_bkgd):
       acc: jnp.ndarray(float32), [batch_size].
       weights: jnp.ndarray(float32), [batch_size, num_samples]
     """
-    print("shape of rgb right outside the model", rgb.shape)
     eps = 1e-10
     dists = jnp.concatenate(
         [
-            z_vals[Ellipsis, 1:] - z_vals[Ellipsis, :-1],
-            jnp.broadcast_to([1e10], z_vals[Ellipsis, :1].shape),
+            z_vals[..., 1:] - z_vals[..., :-1],
+            jnp.broadcast_to([1e10], z_vals[..., :1].shape),
         ],
         -1,
     )
-    dists = dists * jnp.linalg.norm(dirs[Ellipsis, None, :], axis=-1)
+    dists = dists * jnp.linalg.norm(dirs[..., None, :], axis=-1)
     # Note that we're quietly turning sigma from [..., 0] to [...].
-    alpha = 1.0 - jnp.exp(-sigma[Ellipsis, 0] * dists)
+    alpha = 1.0 - jnp.exp(-sigma[..., 0] * dists)
     accum_prod = jnp.concatenate(
         [
-            jnp.ones_like(alpha[Ellipsis, :1], alpha.dtype),
-            jnp.cumprod(1.0 - alpha[Ellipsis, :-1] + eps, axis=-1),
+            jnp.ones_like(alpha[..., :1], alpha.dtype),
+            jnp.cumprod(1.0 - alpha[..., :-1] + eps, axis=-1),
         ],
         axis=-1,
     )
     weights = alpha * accum_prod
 
-    comp_rgb = (weights[Ellipsis, None] * rgb).sum(axis=-2)
+    comp_rgb = (weights[..., None] * rgb).sum(axis=-2)
     depth = (weights * z_vals).sum(axis=-1)
     acc = weights.sum(axis=-1)
     # Equivalent to (but slightly more efficient and stable than):
@@ -218,7 +217,7 @@ def volumetric_rendering(rgb, sigma, z_vals, dirs, white_bkgd):
     disp = acc / depth
     disp = jnp.where((disp > 0) & (disp < inv_eps) & (acc > eps), disp, inv_eps)
     if white_bkgd:
-        comp_rgb = comp_rgb + (1.0 - acc[Ellipsis, None])
+        comp_rgb = comp_rgb + (1.0 - acc[..., None])
     return comp_rgb, disp, acc, weights
 
 
@@ -246,7 +245,7 @@ def piecewise_constant_pdf(key, bins, weights, num_samples, randomized):
     # Compute the PDF and CDF for each weight vector, while ensuring that the CDF
     # starts with exactly 0 and ends with exactly 1.
     pdf = weights / weight_sum
-    cdf = jnp.minimum(1, jnp.cumsum(pdf[Ellipsis, :-1], axis=-1))
+    cdf = jnp.minimum(1, jnp.cumsum(pdf[..., :-1], axis=-1))
     cdf = jnp.concatenate(
         [
             jnp.zeros(list(cdf.shape[:-1]) + [1]),
@@ -267,13 +266,13 @@ def piecewise_constant_pdf(key, bins, weights, num_samples, randomized):
 
     # Identify the location in `cdf` that corresponds to a random sample.
     # The final `True` index in `mask` will be the start of the sampled interval.
-    mask = u[Ellipsis, None, :] >= cdf[Ellipsis, :, None]
+    mask = u[..., None, :] >= cdf[..., :, None]
 
     def find_interval(x):
         # Grab the value where `mask` switches from True to False, and vice versa.
         # This approach takes advantage of the fact that `x` is sorted.
-        x0 = jnp.max(jnp.where(mask, x[Ellipsis, None], x[Ellipsis, :1, None]), -2)
-        x1 = jnp.min(jnp.where(~mask, x[Ellipsis, None], x[Ellipsis, -1:, None]), -2)
+        x0 = jnp.max(jnp.where(mask, x[..., None], x[..., :1, None]), -2)
+        x1 = jnp.min(jnp.where(~mask, x[..., None], x[..., -1:, None]), -2)
         return x0, x1
 
     bins_g0, bins_g1 = find_interval(bins)

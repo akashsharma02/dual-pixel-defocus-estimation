@@ -61,13 +61,6 @@ def train_step(model, rng, state, batch, lr):
 
     def loss_fn(variables):
         rays = batch["rays"]
-        # print(
-        #     "shape of rays",
-        #     rays.origins.shape,
-        #     rays.directions.shape,
-        #     rays.viewdirs.shape,
-        # )
-        # print("shape of batch pixels", batch["pixels"])
         ret = model.apply(variables, key_0, key_1, rays, FLAGS.randomized)
         if len(ret) not in (1, 2):
             raise ValueError(
@@ -76,9 +69,7 @@ def train_step(model, rng, state, batch, lr):
             )
         # The main prediction is always at the end of the ret list.
         rgb, unused_disp, unused_acc = ret[-1]
-        # print("shape of rgb before", rgb.shape)
         rgb_l, rgb_r = utils.post_process(rgb)
-        # print("shape of rgb", rgb_l.shape)
         loss_r = ((rgb_r - batch["pixels"][Ellipsis, 1]) ** 2).mean()
         psnr_r = utils.compute_psnr(loss_r)
         loss_l = ((rgb_l - batch["pixels"][Ellipsis, 0]) ** 2).mean()
@@ -156,12 +147,8 @@ def train_step(model, rng, state, batch, lr):
     return new_state, stats, rng
 
 
-def main(unused_argv):
-    rng = random.PRNGKey(20200823)
-    # Shift the numpy random seed by host_id() to shuffle data loaded by different
-    # hosts.
-    np.random.seed(20201473 + jax.process_index())
-
+def updateFlags() -> None:
+    """ Update Flags from command line """
     if FLAGS.config is not None:
         utils.update_flags(FLAGS)
     if FLAGS.batch_size % jax.device_count() != 0:
@@ -170,6 +157,16 @@ def main(unused_argv):
         raise ValueError("train_dir must be set. None set now.")
     if FLAGS.data_dir is None:
         raise ValueError("data_dir must be set. None set now.")
+
+
+def main(unused_argv):
+
+    rng = random.PRNGKey(20200823)
+    # Shift the numpy random seed by host_id() to shuffle data loaded by different hosts.
+    rng_process = rng + jax.process_index()
+    np.random.seed(rng_process)
+
+    updateFlags()
 
     dataset = datasets.get_dataset("train", FLAGS)
     test_dataset = datasets.get_dataset("test", FLAGS)
@@ -210,13 +207,13 @@ def main(unused_argv):
     )
 
     # Compiling to the CPU because it's faster and more accurate.
-    ssim_fn = jax.jit(functools.partial(utils.compute_ssim, max_val=1.0), backend="cpu")
-
+    # ssim_fn = jax.jit(functools.partial(utils.compute_ssim, max_val=1.0), backend="cpu")
     if not utils.isdir(FLAGS.train_dir):
-        utils.makedirs(FLAGS.train_dir)
+        os.makedirs(FLAGS.train_dir)
+
     state = checkpoints.restore_checkpoint(FLAGS.train_dir, state)
     # Resume training a the step of the last checkpoint.
-    init_step = state.optimizer.state.step + 1  # : commenting so that first the test phase occurs
+    init_step = state.optimizer.state.step - 1
     state = flax.jax_utils.replicate(state)
 
     if jax.process_index() == 0:
@@ -225,13 +222,13 @@ def main(unused_argv):
     # Prefetch_buffer_size = 3 x batch_size
     pdataset = flax.jax_utils.prefetch_to_device(dataset, 3)
     n_local_devices = jax.local_device_count()
-    rng = rng + jax.process_index()  # Make random seed separate across hosts.
-    keys = random.split(rng, n_local_devices)  # For pmapping RNG keys.
+    keys = random.split(rng_process, n_local_devices)  # For pmapping RNG keys.
     gc.disable()  # Disable automatic garbage collection for efficiency.
     stats_trace = []
     reset_timer = True
+
     for step, batch in zip(range(init_step, FLAGS.max_steps + 1), pdataset):
-        # print("Reached the start of a new iteration")
+        print(step)
         if reset_timer:
             t_loop_start = time.time()
             reset_timer = False

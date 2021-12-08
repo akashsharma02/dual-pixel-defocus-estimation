@@ -13,13 +13,13 @@
 # limitations under the License.
 
 #!/bin/bash
-CONFIG=configs/dual-pixel
+CONFIG=configs/dual-pixel-akash
 EXPERIMENT=dual-pixel-debug
-# DATA_DIR=/home/akashsharma/Documents/datasets/dual-pixel-defocus/
-# TRAIN_DIR=/home/akashsharma/tmp/dual-pixel/$EXPERIMENT
+DATA_DIR=/home/akashsharma/Documents/datasets/dual-pixel-defocus/
+TRAIN_DIR=/home/akashsharma/tmp/dual-pixel/$EXPERIMENT
 
-DATA_DIR=/home/tkhurana/Desktop/CMU/Courses/CompPhoto/project/data/dual-pixel-defocus/
-TRAIN_DIR=/home/tkhurana/Desktop/CMU/Courses/CompPhoto/project/results/$EXPERIMENT
+# DATA_DIR=/home/tkhurana/Desktop/CMU/Courses/CompPhoto/project/data/dual-pixel-defocus/
+# TRAIN_DIR=/home/tkhurana/Desktop/CMU/Courses/CompPhoto/project/results/$EXPERIMENT
 
 python -m train \
 --data_dir=$DATA_DIR \

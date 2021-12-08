@@ -228,7 +228,7 @@ def define_flags():
     flags.DEFINE_bool("save_output", True, "save predicted images to disk if True.")
     flags.DEFINE_integer(
         "chunk",
-        128,
+        64,
         "the size of chunks for evaluation inferences, set to the value that"
         "fits your GPU/TPU memory.",
     )
@@ -297,7 +297,7 @@ def render_image(render_fn, rays, rng, normalize_disp, chunk=8192):
     results = []
     for i in range(0, num_rays, chunk):
         # pylint: disable=cell-var-from-loop
-        chunk_rays = namedtuple_map(lambda r: r[i : i + chunk], rays)
+        chunk_rays = namedtuple_map(lambda r: r[i: i + chunk], rays)
         chunk_size = chunk_rays[0].shape[0]
         rays_remaining = chunk_size % jax.device_count()
         if rays_remaining != 0:
@@ -351,8 +351,8 @@ def post_process(rgb):
       l, r: left and right dual pixels of shape (batch,)
     """
     batch, lightfield_height, lightfield_width = rgb.shape
-    rgb_l = jnp.mean(rgb[:, :, : int(lightfield_width / 2)], axis=(1, 2))
-    rgb_r = jnp.mean(rgb[:, :, int(lightfield_width / 2) :], axis=(1, 2))
+    rgb_l = jnp.mean(rgb[:, :, :int(lightfield_width / 2)], axis=(1, 2))
+    rgb_r = jnp.mean(rgb[:, :, int(lightfield_width / 2):], axis=(1, 2))
     return rgb_l, rgb_r
 
 

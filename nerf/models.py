@@ -77,9 +77,7 @@ class NerfLightfieldModel(nn.Module):
         # Stratified sampling along rays
         key, rng_0 = random.split(rng_0)
         # convert whatever the input set of rays per pixel is, to a N x 3 ray vector
-        print("rays origins shape before going into the model", rays.origins.shape)
         rays = utils.namedtuple_map(lambda r: r.reshape((-1, 3)), rays)
-        print("rays origins shape before going into the model 1", rays.origins.shape)
         z_vals, samples = model_utils.sample_along_rays(
             key,
             rays.origins,
@@ -114,21 +112,20 @@ class NerfLightfieldModel(nn.Module):
             raw_rgb, raw_sigma = coarse_mlp(samples_enc, viewdirs_enc)
         else:
             raw_rgb, raw_sigma = coarse_mlp(samples_enc)
+
         # Add noises to regularize the density predictions if needed
-        print("raw rgb shape", raw_rgb.shape)
         key, rng_0 = random.split(rng_0)
         raw_sigma = model_utils.add_gaussian_noise(
             key, raw_sigma, self.noise_std, randomized,
         )
         rgb = self.rgb_activation(raw_rgb)
         sigma = self.sigma_activation(raw_sigma)
+
         # Volumetric rendering.
         comp_rgb, disp, acc, weights = model_utils.volumetric_rendering(
             rgb, sigma, z_vals, rays.directions, white_bkgd=self.white_bkgd,
         )
-        print("comp rgb shape", comp_rgb.shape)
-        print("disp shape", disp.shape)
-        print("acc shape", acc.shape)
+
         comp_rgb = comp_rgb.reshape((-1, self.lightfield_height, self.lightfield_width))
         disp = disp.reshape((-1, self.lightfield_height, self.lightfield_width))
         acc = acc.reshape((-1, self.lightfield_height, self.lightfield_width))
@@ -182,9 +179,7 @@ class NerfLightfieldModel(nn.Module):
                 rgb, sigma, z_vals, rays.directions, white_bkgd=self.white_bkgd,
             )
             print("right out of volumetric rendering", comp_rgb.shape)
-            comp_rgb = comp_rgb.reshape(
-                (-1, self.lightfield_height, self.lightfield_width)
-            )
+            comp_rgb = comp_rgb.reshape((-1, self.lightfield_height, self.lightfield_width))
             disp = disp.reshape((-1, self.lightfield_height, self.lightfield_width))
             acc = acc.reshape((-1, self.lightfield_height, self.lightfield_width))
             ret.append((comp_rgb, disp, acc))
