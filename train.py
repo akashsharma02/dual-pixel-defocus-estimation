@@ -34,6 +34,7 @@ import os
 from nerf import datasets
 from nerf import models
 from nerf import utils
+from nerf import loss
 
 FLAGS = flags.FLAGS
 
@@ -60,13 +61,13 @@ def train_step(model, rng, state, batch, lr):
 
     def loss_fn(variables):
         rays = batch["rays"]
-        print(
-            "shape of rays",
-            rays.origins.shape,
-            rays.directions.shape,
-            rays.viewdirs.shape,
-        )
-        print("shape of batch pixels", batch["pixels"])
+        # print(
+        #     "shape of rays",
+        #     rays.origins.shape,
+        #     rays.directions.shape,
+        #     rays.viewdirs.shape,
+        # )
+        # print("shape of batch pixels", batch["pixels"])
         ret = model.apply(variables, key_0, key_1, rays, FLAGS.randomized)
         if len(ret) not in (1, 2):
             raise ValueError(
@@ -75,13 +76,15 @@ def train_step(model, rng, state, batch, lr):
             )
         # The main prediction is always at the end of the ret list.
         rgb, unused_disp, unused_acc = ret[-1]
-        print("shape of rgb before", rgb.shape)
+        # print("shape of rgb before", rgb.shape)
         rgb_l, rgb_r = utils.post_process(rgb)
-        print("shape of rgb", rgb_l.shape)
+        # print("shape of rgb", rgb_l.shape)
         loss_r = ((rgb_r - batch["pixels"][Ellipsis, 1]) ** 2).mean()
         psnr_r = utils.compute_psnr(loss_r)
         loss_l = ((rgb_l - batch["pixels"][Ellipsis, 0]) ** 2).mean()
         psnr_l = utils.compute_psnr(loss_l)
+        rgb_pixels = rgb.reshape((-1, 2, FLAGS.lightfield_height, FLAGS.lightfield_width)).transpose(0, 2, 3, 1)
+        smoothness_loss = loss.smooth_l1_loss(rgb_pixels.reshape((-1,)), reduction='sum')
         if len(ret) > 1:
             # If there are both coarse and fine predictions, we compute the loss for
             # the coarse prediction (ret[0]) as well.
@@ -91,9 +94,12 @@ def train_step(model, rng, state, batch, lr):
             psnr_cl = utils.compute_psnr(loss_cl)
             loss_cr = ((rgb_cr - batch["pixels"][Ellipsis, 1]) ** 2).mean()
             psnr_cr = utils.compute_psnr(loss_cr)
+            rgb_c_pixels = rgb_c.reshape((-1, 2, FLAGS.lightfield_height, FLAGS.lightfield_width)).transpose(0, 2, 3, 1)
+            smoothness_loss_c = loss.smooth_l1_loss(rgb_c_pixels.reshape((-1,)), reduction='sum')
         else:
             loss_cr = loss_cl = 0.0
             psnr_cr = psnr_cl = 0.0
+            smoothness_loss_c = 0.0
 
         def tree_sum_fn(fn):
             return jax.tree_util.tree_reduce(
@@ -114,9 +120,12 @@ def train_step(model, rng, state, batch, lr):
             psnr_cl=psnr_cl,
             psnr_cr=psnr_cr,
             weight_l2=weight_l2,
+            smoothness_loss=smoothness_loss,
+            smoothness_loss_c=smoothness_loss_c
         )
         return (
-            loss_l + loss_r + loss_cl + loss_cr + FLAGS.weight_decay_mult * weight_l2,
+            loss_l + loss_r + loss_cl + loss_cr + FLAGS.smoothness_loss_mult * smoothness_loss +
+            FLAGS.smoothness_loss_mult * smoothness_loss_c + FLAGS.weight_decay_mult * weight_l2,
             stats,
         )
 
@@ -207,7 +216,7 @@ def main(unused_argv):
         utils.makedirs(FLAGS.train_dir)
     state = checkpoints.restore_checkpoint(FLAGS.train_dir, state)
     # Resume training a the step of the last checkpoint.
-    init_step = state.optimizer.state.step  # + 1: commenting so that first the test phase occurs
+    init_step = state.optimizer.state.step + 1  # : commenting so that first the test phase occurs
     state = flax.jax_utils.replicate(state)
 
     if jax.process_index() == 0:
@@ -239,6 +248,7 @@ def main(unused_argv):
         if jax.process_index() == 0:
             if step % FLAGS.print_every == 0:
                 summary_writer.scalar("train_loss", stats.loss_l[0], step)
+                summary_writer.scalar("train_smoothness_loss", stats.smoothness_loss[0], step)
                 summary_writer.scalar("train_psnr", stats.psnr_l[0], step)
                 summary_writer.scalar("train_loss_coarse", stats.loss_cl[0], step)
                 summary_writer.scalar("train_psnr_coarse", stats.psnr_cl[0], step)
@@ -260,6 +270,7 @@ def main(unused_argv):
                     + f"/{FLAGS.max_steps:d}: "
                     + f"i_loss={stats.loss_l[0]:0.4f}, "
                     + f"avg_loss={avg_loss:0.4f}, "
+                    + f"smoothness_loss={stats.smoothness_loss[0]:0.4f}, "
                     + f"weight_l2={stats.weight_l2[0]:0.2e}, "
                     + f"lr={lr:0.2e}, "
                     + f"{rays_per_sec:0.0f} rays/sec"
@@ -295,23 +306,34 @@ def main(unused_argv):
                     test_case["pixels"][..., 1].shape[1],
                     FLAGS.lightfield_height,
                     FLAGS.lightfield_width)).transpose(2, 3, 0, 1)
+                pred_disp_lightfield = pred_disp.reshape((
+                    test_case["pixels"][..., 1].shape[0],
+                    test_case["pixels"][..., 1].shape[1],
+                    FLAGS.lightfield_height,
+                    FLAGS.lightfield_width)).transpose(2, 3, 0, 1)
                 pred_color_l, pred_color_r = utils.post_process(pred_color)
                 pred_color_l = pred_color_l.reshape(test_case["pixels"][..., 1].shape)
 
                 pred_color_r = pred_color_r.reshape(test_case["pixels"][..., 1].shape)
 
-                print(pred_color_r.shape)
+                # print(pred_color_r.shape)
                 save_right = pred_color_r
                 save_left = pred_color_l
-                np.save(f'/data3/tkhurana/misc/dualpixel/results/right_{step}', save_right)
-                np.save(f'/data3/tkhurana/misc/dualpixel/results/left_{step}', save_left)
+                np.save(os.path.join(FLAGS.train_dir, f'right_{step}'), save_right)
+                np.save(os.path.join(FLAGS.train_dir, f'left_{step}'), save_left)
 
-                os.makedirs(f'/data3/tkhurana/misc/dualpixel/results/lightfield_{step}', exist_ok=True)
+                os.makedirs(os.path.join(FLAGS.train_dir, f'lightfield_{step}'), exist_ok=True)
+                os.makedirs(os.path.join(FLAGS.train_dir, f'lightfield_disp_{step}'), exist_ok=True)
                 for row in range(FLAGS.lightfield_height):
                     for col in range(FLAGS.lightfield_width):
                         utils.save_img(
                             pred_color_lightfield[row, col],
-                            f'/data3/tkhurana/misc/dualpixel/results/lightfield_{step}/{row}_{col}.png',
+                            os.path.join(FLAGS.train_dir, f'lightfield_{step}/{row}_{col}.png'),
+                            minmax_scaling=True
+                        )
+                        utils.save_img(
+                            pred_disp_lightfield[row, col],
+                            os.path.join(FLAGS.train_dir, f'lightfield_disp_{step}/{row}_{col}.png'),
                             minmax_scaling=True
                         )
 

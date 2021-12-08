@@ -48,6 +48,8 @@ class Stats:
     loss_cr: float
     psnr_cr: float
     weight_l2: float
+    smoothness_loss: float
+    smoothness_loss_c: float
 
 
 Rays = collections.namedtuple("Rays", ("origins", "directions", "viewdirs"))
@@ -185,6 +187,11 @@ def define_flags():
         "lr_delay_mult",
         1.0,
         "A multiplier on the learning rate when the step " "is < lr_delay_steps",
+    )
+    flags.DEFINE_float(
+        "smoothness_loss_mult",
+        10.0,
+        "A multiplier on the smooth L1 loss",
     )
     flags.DEFINE_float(
         "grad_max_norm", 0.0, "The gradient clipping magnitude (disabled if == 0)."

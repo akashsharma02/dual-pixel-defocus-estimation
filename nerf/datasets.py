@@ -26,6 +26,7 @@ from os import path
 import os
 import json
 import math
+import cv2
 
 INTERNAL = False  # pylint: disable=g-statement-before-imports
 if not INTERNAL:
@@ -541,26 +542,67 @@ class Pixel4DP(Dataset):
 
         if self.batching == "single_image":
             # Sample half number of rays, and then sample their neighbors (right and down)
-            coords = np.stack(np.meshgrid(  # pylint: disable=unbalanced-tuple-unpacking
-                np.arange(self.w, dtype=int),  # X-Axis (columns)
-                np.arange(self.h, dtype=int),  # Y-Axis (rows)
-                indexing="xy",
-            ), axis=-1)
+            coords = np.stack(
+                np.meshgrid(  # pylint: disable=unbalanced-tuple-unpacking
+                    np.arange(self.w, dtype=int),  # X-Axis (columns)
+                    np.arange(self.h, dtype=int),  # Y-Axis (rows)
+                    indexing="xy",
+                ),
+                axis=-1,
+            )
             coords = coords.reshape((-1, 2))
-            print(coords.shape)
-            sampled_inds = np.random.choice(coords.shape[0], self.batch_size//2, replace=False)
+            # print(coords.shape)
+            sampled_inds = np.random.choice(
+                coords.shape[0], self.batch_size // 2, replace=False
+            )
 
-            print(self.batch_size)
-            print(f"Sampled indices shape: {sampled_inds.shape}")
+            # print(self.batch_size)
+            # print(f"Sampled indices shape: {sampled_inds.shape}")
 
             sampled_coords = coords[sampled_inds]
-            neighbor_inds = np.concatenate((np.repeat(np.array([[1, 0], ]), sampled_coords.shape[0]//2, axis=0),
-                                            np.repeat(np.array([[0, 1], ]), sampled_coords.shape[0]//2, axis=0)), axis=0)
-
-            sampled_coords_neighbors = np.where(sampled_coords < [self.w - 1, self.h - 1], sampled_coords + neighbor_inds, sampled_coords - neighbor_inds)
-            sampled_coords = np.stack((sampled_coords, sampled_coords_neighbors), axis=0).reshape((-1, 2))
-            batch_pixels = self.images[0][sampled_coords[:, 1], sampled_coords[:, 0], ...]
-            batch_rays = utils.namedtuple_map(lambda r: r[sampled_coords[:, 1], sampled_coords[:, 0]], self.rays)
+            neighbor_inds = np.concatenate(
+                (
+                    np.repeat(
+                        np.array([[1, 0],]), sampled_coords.shape[0] // 2, axis=0
+                    ),
+                    np.repeat(
+                        np.array([[0, 1],]), sampled_coords.shape[0] // 2, axis=0
+                    ),
+                ),
+                axis=0,
+            )
+            # print("neighbour indices shape", neighbor_inds.shape)
+            sampled_coords_neighbors = np.where(
+                sampled_coords < [self.w - 1, self.h - 1],
+                sampled_coords + neighbor_inds,
+                sampled_coords - neighbor_inds,
+            )
+            # corner_cases = np.where(sampled_coords > [self.w - 2, self.h - 2])
+            # print("self w and self h", self.w, self.h)
+            # print("list of corner cases indices", corner_cases)
+            # print(
+            #     "some sampled coords and their neighbours",
+            #     sampled_coords[corner_cases],
+            #     sampled_coords_neighbors[corner_cases],
+            # )
+            # print(
+            #     "some sampled coords and their neighbours",
+            #     sampled_coords[23],
+            #     sampled_coords_neighbors[23],
+            # )
+            # print("sampled_coords shape", sampled_coords.shape)
+            # print("sampled_coords_neighbors shape", sampled_coords_neighbors.shape)
+            sampled_coords = (
+                np.stack((sampled_coords, sampled_coords_neighbors), axis=0)
+                .transpose(1, 0, 2)
+                .reshape((-1, 2))
+            )
+            batch_pixels = self.images[0][
+                sampled_coords[:, 1], sampled_coords[:, 0], ...
+            ]
+            batch_rays = utils.namedtuple_map(
+                lambda r: r[sampled_coords[:, 1], sampled_coords[:, 0]], self.rays
+            )
         else:
             raise NotImplementedError(
                 f"{self.batching} batching strategy is not implemented."
@@ -594,9 +636,11 @@ class Pixel4DP(Dataset):
         def _load_and_preprocess_pixel_data(path_to_file):
             # first deduct black level (1024 for 14-bit Google Pixel 4 DP data), then normalize to [0, 1]
             with Image.open(path_to_file) as f:
+                # print("unique values in the image", np.unique(f))
                 image = np.array(f) - 1024
                 image[image < 0] = 0
-                image = np.stack([np.float32(image)] * 1, axis=2) / (2 ** 14 - 1)
+                image = np.stack([np.float32(image)] * 1, axis=2) / (2 ** 12 - 1)
+                # cv2.imwrite("/data3/tkhurana/scene.png", image * 255)
             return image
 
         # Keep only central field of view (1008 * 1344)
