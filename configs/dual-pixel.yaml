@@ -1,5 +1,5 @@
 dataset: Pixel4DP
-scene: "001"
+scene: "006"
 batching: single_image
 model: "lightfieldnerf"
 factor: 0
@@ -16,4 +16,4 @@ render_every: 10000
 near: 0.1
 far: 4.0
 max_steps: 40000
-smoothness_loss_mult: 0.1
+smoothness_loss_mult: 0.05

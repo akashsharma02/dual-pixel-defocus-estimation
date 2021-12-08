@@ -305,6 +305,11 @@ def main(unused_argv):
                     test_case["pixels"][..., 1].shape[1],
                     FLAGS.lightfield_height,
                     FLAGS.lightfield_width)).transpose(2, 3, 0, 1)
+                pred_disp_lightfield = pred_disp.reshape((
+                    test_case["pixels"][..., 1].shape[0],
+                    test_case["pixels"][..., 1].shape[1],
+                    FLAGS.lightfield_height,
+                    FLAGS.lightfield_width)).transpose(2, 3, 0, 1)
                 pred_color_l, pred_color_r = utils.post_process(pred_color)
                 pred_color_l = pred_color_l.reshape(test_case["pixels"][..., 1].shape)
 
@@ -313,15 +318,21 @@ def main(unused_argv):
                 # print(pred_color_r.shape)
                 save_right = pred_color_r
                 save_left = pred_color_l
-                np.save(f'/data3/tkhurana/misc/dualpixel/results/right_{step}', save_right)
-                np.save(f'/data3/tkhurana/misc/dualpixel/results/left_{step}', save_left)
+                np.save(os.path.join(FLAGS.train_dir, f'right_{step}'), save_right)
+                np.save(os.path.join(FLAGS.train_dir, f'left_{step}'), save_left)
 
-                os.makedirs(f'/data3/tkhurana/misc/dualpixel/results/lightfield_{step}', exist_ok=True)
+                os.makedirs(os.path.join(FLAGS.train_dir, f'lightfield_{step}'), exist_ok=True)
+                os.makedirs(os.path.join(FLAGS.train_dir, f'lightfield_disp_{step}'), exist_ok=True)
                 for row in range(FLAGS.lightfield_height):
                     for col in range(FLAGS.lightfield_width):
                         utils.save_img(
                             pred_color_lightfield[row, col],
-                            f'/data3/tkhurana/misc/dualpixel/results/lightfield_{step}/{row}_{col}.png',
+                            os.path.join(FLAGS.train_dir, f'lightfield_{step}/{row}_{col}.png'),
+                            minmax_scaling=True
+                        )
+                        utils.save_img(
+                            pred_disp_lightfield[row, col],
+                            os.path.join(FLAGS.train_dir, f'lightfield_disp_{step}/{row}_{col}.png'),
                             minmax_scaling=True
                         )
 

@@ -26,6 +26,7 @@ from os import path
 import os
 import json
 import math
+import cv2
 
 INTERNAL = False  # pylint: disable=g-statement-before-imports
 if not INTERNAL:
@@ -635,9 +636,11 @@ class Pixel4DP(Dataset):
         def _load_and_preprocess_pixel_data(path_to_file):
             # first deduct black level (1024 for 14-bit Google Pixel 4 DP data), then normalize to [0, 1]
             with Image.open(path_to_file) as f:
+                # print("unique values in the image", np.unique(f))
                 image = np.array(f) - 1024
                 image[image < 0] = 0
-                image = np.stack([np.float32(image)] * 1, axis=2) / (2 ** 14 - 1)
+                image = np.stack([np.float32(image)] * 1, axis=2) / (2 ** 12 - 1)
+                # cv2.imwrite("/data3/tkhurana/scene.png", image * 255)
             return image
 
         # Keep only central field of view (1008 * 1344)
